@@ -6,11 +6,60 @@ Claude Code용 프로젝트별 AI 개발 환경
 
 ## 설치
 
+### 방법 1: 프로젝트에 직접 복사
+
 ```bash
-git clone https://github.com/yejune/do
+# Do 클론
+git clone https://github.com/yejune/do /tmp/do
+
+# 원하는 프로젝트로 복사
+cp -r /tmp/do/.claude /your/project/
+cp -r /tmp/do/.do /your/project/
+cp /tmp/do/CLAUDE.md /your/project/
+
+# 정리
+rm -rf /tmp/do
 ```
 
-프로젝트 루트에 `.claude/`, `.do/` 디렉토리를 복사한 후 Claude Code에서 사용
+### 방법 2: Git subtree (업데이트 용이)
+
+```bash
+cd /your/project
+git subtree add --prefix=.claude https://github.com/yejune/do.git main --squash
+```
+
+### 방법 3: Git submodule
+
+```bash
+cd /your/project
+git submodule add https://github.com/yejune/do.git .do-kit
+ln -s .do-kit/.claude .claude
+ln -s .do-kit/.do .do
+cp .do-kit/CLAUDE.md .
+```
+
+---
+
+## 설정
+
+프로젝트별 설정은 `.do/config/sections/`에서 관리:
+
+```yaml
+# .do/config/sections/language.yaml
+conversation_language: ko  # 대화 언어 (ko, en, ja, zh)
+code_comments: en          # 코드 주석 언어
+
+# .do/config/sections/user.yaml
+name: "사용자 이름"
+```
+
+---
+
+## 요구사항
+
+- Claude Code CLI
+- Python 3.10+ (훅 실행용)
+- uv (Python 패키지 관리자)
 
 ---
 
