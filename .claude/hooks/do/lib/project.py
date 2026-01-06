@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Project metadata utilities
 
 Project information inquiry (language, Git, SPEC progress, etc.)

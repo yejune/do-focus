@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Event-Driven Checkpoint system
 
 Detect risky tasks and create automatic checkpoints
