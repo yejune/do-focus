@@ -31,11 +31,7 @@ echo "설치 중..."
 mkdir -p .claude
 mkdir -p .do/config/sections
 
-# .claude 복사 (기존 settings.json 보존)
-if [ -f ".claude/settings.json" ]; then
-    cp .claude/settings.json "$TMP/settings.backup.json"
-fi
-
+# .claude 복사
 cp -r "$TMP/do/.claude/agents" .claude/
 cp -r "$TMP/do/.claude/skills" .claude/
 cp -r "$TMP/do/.claude/hooks" .claude/
@@ -43,25 +39,25 @@ cp -r "$TMP/do/.claude/commands" .claude/
 cp -r "$TMP/do/.claude/styles" .claude/
 cp -r "$TMP/do/.claude/lib" .claude/ 2>/dev/null || true
 
-if [ -f "$TMP/settings.backup.json" ]; then
-    echo "settings.json 보존됨 (새 버전: .claude/settings.json.new)"
-    cp "$TMP/do/.claude/settings.json" .claude/settings.json.new
-    mv "$TMP/settings.backup.json" .claude/settings.json
-else
+# settings.json: --force면 덮어쓰기, 아니면 보존
+if [ "$1" = "--force" ]; then
+    cp "$TMP/do/.claude/settings.json" .claude/
+elif [ ! -f ".claude/settings.json" ]; then
     cp "$TMP/do/.claude/settings.json" .claude/
 fi
 
-# .do/config 복사 (기존 설정 보존)
-if [ ! -f ".do/config/sections/language.yaml" ]; then
+# .do/config 복사
+if [ "$1" = "--force" ]; then
+    cp -r "$TMP/do/.do/config/"* .do/config/ 2>/dev/null || true
+elif [ ! -f ".do/config/sections/language.yaml" ]; then
     cp -r "$TMP/do/.do/config/"* .do/config/ 2>/dev/null || true
 fi
 
-# CLAUDE.md
-if [ ! -f "CLAUDE.md" ]; then
+# CLAUDE.md: --force면 덮어쓰기, 아니면 보존
+if [ "$1" = "--force" ]; then
     cp "$TMP/do/CLAUDE.md" .
-else
-    echo "CLAUDE.md 보존됨 (새 버전: CLAUDE.md.new)"
-    cp "$TMP/do/CLAUDE.md" CLAUDE.md.new
+elif [ ! -f "CLAUDE.md" ]; then
+    cp "$TMP/do/CLAUDE.md" .
 fi
 
 # 권한 설정
