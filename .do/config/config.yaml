@@ -1,0 +1,4 @@
+do:
+  version: "0.1.1"
+  name: "Do"
+  description: "Claude Code 프로젝트 환경"

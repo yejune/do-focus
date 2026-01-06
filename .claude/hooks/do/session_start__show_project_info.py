@@ -899,13 +899,13 @@ def format_session_output() -> str:
         # Show setup guidance (based on conversation_language)
         if personalization["is_korean"]:
             output.append(
-                "   👋 환영합니다! 프로젝트를 시작하기 전에 "
-                "'/do:0-project setting' 명령어로 사용자 이름과 설정을 구성해주세요"
+                "   👋 환영합니다! .do/config/sections/user.yaml에서 "
+                "사용자 이름을 설정할 수 있습니다"
             )
         else:
             output.append(
-                "   👋 Welcome! Before starting, please run '/do:0-project setting' "
-                "to configure your name and project settings"
+                "   👋 Welcome! You can configure your name in "
+                ".do/config/sections/user.yaml"
             )
     elif personalization["has_personalization"]:
         user_greeting = personalization.get("personalized_greeting", "")
