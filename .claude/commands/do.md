@@ -1,6 +1,12 @@
-# /do - Do 총괄 에이전트 소환
+---
+description: Do 총괄 에이전트 - 복잡한 작업을 전문 에이전트에게 병렬 위임
+allowed-tools: Task, Read, Write, Edit, Grep, Glob, Bash, TodoWrite, WebFetch, WebSearch
+argument-hint: [요청]
+---
 
-사용자가 `/do <요청>` 형태로 호출했습니다.
+# Do 총괄 에이전트
+
+사용자 요청: $ARGUMENTS
 
 ## 실행
 
