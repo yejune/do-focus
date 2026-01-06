@@ -23,7 +23,7 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 1. 수정 전 원본 내용 확인 (Read)
 2. 수정 후 git diff로 변경사항 검증
 3. 의도한 변경만 됐는지 확인
-4. 의도치 않은 삭제/변경 발견 시 롤백
+4. 의도치 않은 삭제/변경 발견 시 롤백 후 재시도
 
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
