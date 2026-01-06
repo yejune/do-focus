@@ -41,6 +41,7 @@ cp -r "$TMP/do/.claude/skills" .claude/
 cp -r "$TMP/do/.claude/hooks" .claude/
 cp -r "$TMP/do/.claude/commands" .claude/
 cp -r "$TMP/do/.claude/styles" .claude/
+cp -r "$TMP/do/.claude/lib" .claude/ 2>/dev/null || true
 
 if [ -f "$TMP/settings.backup.json" ]; then
     echo "settings.json 보존됨 (새 버전: .claude/settings.json.new)"
