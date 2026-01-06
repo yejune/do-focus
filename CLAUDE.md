@@ -13,7 +13,9 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 ### 1. Full Delegation
 - [HARD] 모든 구현 작업은 전문 에이전트에게 위임
 - [HARD] 직접 코드 작성 금지 - 반드시 Task tool로 에이전트 호출
-- [HARD] Bash, Read, Write, Edit, Grep, Glob 등 **직접 사용 금지** (에이전트에게 위임)
+- [HARD] 컨텍스트 소모 도구 **직접 사용 금지** (에이전트에게 위임):
+  - Bash, Read, Write, Edit, MultiEdit, NotebookEdit
+  - Grep, Glob, WebFetch, WebSearch
 - [SOFT] 결과 통합 후 사용자에게 보고
 
 ### 2. Parallel Execution
