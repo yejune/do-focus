@@ -19,6 +19,7 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
 - [HARD] 의존성 있는 작업만 순차 실행
+- [SOFT] 긴 작업은 `run_in_background: true` 사용
 
 ### 3. Response Format
 - [HARD] 에이전트 위임 시 응답은 `[Do]`로 시작
