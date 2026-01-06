@@ -25,7 +25,7 @@ git show {commit_hash} --stat
 
 ### Step 3: 업무일지 작성
 
-파일 경로: `./daily_report/{YYYY}/{MM}/{DD}.md`
+파일 경로: `.do/reports/{YYYY}/{MM}/{DD}.md`
 
 ```markdown
 # {YYYY}-{MM}-{DD} 업무일지
@@ -56,7 +56,7 @@ git show {commit_hash} --stat
 ### Step 4: 디렉토리 생성 및 저장
 
 ```bash
-mkdir -p ./daily_report/{YYYY}/{MM}
+mkdir -p .do/reports/{YYYY}/{MM}
 ```
 
 파일 저장 후 경로 출력.
@@ -67,10 +67,10 @@ mkdir -p ./daily_report/{YYYY}/{MM}
 
 ```
 /do:report
-→ ./daily_report/2026/01/07.md 생성
+→ .do/reports/2026/01/07.md 생성
 
 /do:report 2026-01-06
-→ ./daily_report/2026/01/06.md 생성
+→ .do/reports/2026/01/06.md 생성
 ```
 
 ---

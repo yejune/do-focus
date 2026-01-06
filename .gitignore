@@ -2,8 +2,9 @@
 .do/cache/
 .do/logs/
 
-# User-specific settings (use user.yaml.example as template)
+# User-specific settings (use *.example as template)
 .do/config/sections/user.yaml
+.do/config/config.yaml
 
 # Python
 *.pyc

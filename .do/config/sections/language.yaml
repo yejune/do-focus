@@ -1,6 +1,0 @@
-# 언어 설정
-language:
-  conversation_language: ko           # ko, en, ja, zh
-  conversation_language_name: "Korean"
-  code_comments: en                   # 코드 주석 언어
-  documentation: ko                   # 문서 언어

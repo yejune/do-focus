@@ -9,7 +9,7 @@ allowed-tools: AskUserQuestion, Write, Read
 
 ### Step 1: 현재 설정 로드
 
-`.do/config/sections/user.yaml` 파일을 읽어 현재 설정 확인.
+`.do/config/config.yaml` 파일을 읽어 현재 설정 확인 (user 섹션).
 
 ### Step 2: AskUserQuestion으로 수집
 
@@ -31,13 +31,19 @@ allowed-tools: AskUserQuestion, Write, Read
 
 ### Step 3: 설정 저장
 
-`.do/config/sections/user.yaml`에 저장:
+`.do/config/config.yaml`의 user 섹션과 language.conversation 업데이트:
 
 ```yaml
-# 사용자 설정
-name: "{입력받은 이름}"
-language: "{선택한 언어 코드}"
+user:
+  name: "{입력받은 이름}"
+
+language:
+  conversation: "{선택한 언어 코드}"
+  code_comments: en
+  documentation: "{선택한 언어 코드}"
 ```
+
+기존 config.yaml의 다른 섹션(do, style 등)은 유지.
 
 ### Step 4: 완료 메시지
 

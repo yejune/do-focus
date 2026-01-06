@@ -199,16 +199,6 @@ except ImportError:
 
         return value
 
-    def _merge_configs(base: dict, override: dict) -> dict:
-        """Recursively merge two configuration dictionaries."""
-        result = base.copy()
-        for key, value in override.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = _merge_configs(result[key], value)
-            else:
-                result[key] = value
-        return result
-
     def _load_yaml_file(file_path: Path) -> dict:
         """Load a YAML file using PyYAML or simple parser."""
         if not file_path.exists():
@@ -223,51 +213,17 @@ except ImportError:
             return {}
 
     def get_cached_config():
-        """Load config with section file merging for complete configuration.
+        """Load config from unified config.yaml.
 
-        FIX #245/#243: Properly loads both config.yaml AND section files,
-        merging them to provide complete configuration data.
-
-        Priority (highest to lowest):
-        1. Section files (.do/config/sections/*.yaml)
-        2. Main config file (.do/config/config.yaml)
+        Reads configuration from .do/config/config.yaml only.
+        Returns None if config.yaml does not exist.
         """
         project_root = find_project_root()
         config_dir = project_root / ".do" / "config"
 
-        # Start with main config file
+        # Load unified config file (config.yaml only)
         main_config_path = config_dir / "config.yaml"
-        config = _load_yaml_file(main_config_path)
-
-        # If main config failed, try JSON fallback
-        if not config:
-            json_config_path = config_dir / "config.json"
-            if json_config_path.exists():
-                try:
-                    config = json.loads(json_config_path.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError):
-                    config = {}
-
-        # Merge section files (they take priority for their specific keys)
-        sections_dir = config_dir / "sections"
-        if sections_dir.exists():
-            section_files = [
-                ("user.yaml", "user"),
-                ("language.yaml", "language"),
-                ("git-strategy.yaml", "git_strategy"),
-                ("project.yaml", "project"),
-                ("quality.yaml", "quality"),
-                ("system.yaml", "system"),
-            ]
-
-            for filename, key in section_files:
-                section_path = sections_dir / filename
-                section_data = _load_yaml_file(section_path)
-                if section_data:
-                    # Merge section data into config
-                    config = _merge_configs(config, section_data)
-
-        return config if config else None
+        return _load_yaml_file(main_config_path) or None
 
     def get_cached_spec_progress():
         """Get SPEC progress information - FIXED to use YAML frontmatter parsing"""
@@ -700,54 +656,38 @@ def format_project_metadata() -> str:
 def get_language_info(config: dict) -> dict:
     """Get language configuration information
 
-    Handles both nested and flat config structures gracefully:
-    - Nested: config["language"]["conversation_language"]
-    - Flat: config["conversation_language"]
+    Reads from config.yaml nested structure only:
+    - config["language"]["conversation"]
 
     Args:
         config: Configuration dictionary
 
     Returns:
-        Dictionary with language info including display name and status
+        Dictionary with language info including display name
     """
     if not config:
         return {
             "conversation_language": "en",
             "language_name": "English",
-            "status": "⚠️ No config - run /do:setup to configure",
         }
 
-    # Try nested structure first: config["language"]["conversation_language"]
+    # Read from nested structure: config["language"]["conversation"]
     lang_config = config.get("language", {})
-    if isinstance(lang_config, dict):
-        conversation_lang = lang_config.get("conversation_language")
-        lang_name = lang_config.get("conversation_language_name")
-    else:
-        # language key exists but is not a dict (unexpected)
-        conversation_lang = None
-        lang_name = None
+    conversation_lang = lang_config.get("conversation", "en") if isinstance(lang_config, dict) else "en"
 
-    # Fallback to flat structure: config["conversation_language"]
-    if not conversation_lang:
-        conversation_lang = config.get("conversation_language", "en")
-    if not lang_name:
-        lang_name = config.get("conversation_language_name")
+    # Derive language name from language code
+    lang_name_map = {
+        "ko": "Korean",
+        "en": "English",
+        "ja": "Japanese",
+        "zh": "Chinese",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "ru": "Russian",
+    }
+    lang_name = lang_name_map.get(conversation_lang, "Unknown")
 
-    # If still no language name, derive from language code
-    if not lang_name:
-        lang_name_map = {
-            "ko": "Korean",
-            "en": "English",
-            "ja": "Japanese",
-            "zh": "Chinese",
-            "es": "Spanish",
-            "fr": "French",
-            "de": "German",
-            "ru": "Russian",
-        }
-        lang_name = lang_name_map.get(conversation_lang, "Unknown")
-
-    # Language status indicator (removed Active indicator for cleaner output)
     return {"conversation_language": conversation_lang, "language_name": lang_name}
 
 
@@ -790,27 +730,6 @@ def load_user_personalization() -> dict:
             "needs_setup": not has_valid_name,  # FIX #5: Flag for setup guidance
         }
 
-        # Export template variables for other system components
-        template_vars = resolver.export_template_variables(config)
-
-        # Store resolved configuration for session-wide access
-        personalization_cache_file = find_project_root() / ".do" / "cache" / "personalization.json"
-        try:
-            personalization_cache_file.parent.mkdir(parents=True, exist_ok=True)
-
-            # Store both personalization info and template variables
-            cache_data = {
-                "personalization": personalization,
-                "template_variables": template_vars,
-                "resolved_at": datetime.now().isoformat(),
-                "config_source": config.get("config_source", "default"),
-            }
-            personalization_cache_file.write_text(json.dumps(cache_data, ensure_ascii=False, indent=2))
-
-        except (OSError, PermissionError):
-            # Cache write errors are non-critical
-            pass
-
         return personalization
 
     except ImportError:
@@ -825,28 +744,14 @@ def load_user_personalization() -> dict:
         conversation_lang = os.getenv("MOAI_CONVERSATION_LANG")
 
         # Fallback to config file if environment variables not set
-        # Handle both nested and flat config structures gracefully
+        # Read from config.yaml nested structure only
         if user_name is None and config:
-            # Try nested structure first: config["user"]["name"]
             user_config = config.get("user", {})
-            if isinstance(user_config, dict):
-                user_name = user_config.get("name", "")
-            else:
-                user_name = ""
-            # Fallback to flat structure: config["name"]
-            if not user_name:
-                user_name = config.get("name", "")
+            user_name = user_config.get("name", "") if isinstance(user_config, dict) else ""
 
         if conversation_lang is None and config:
-            # Try nested structure first: config["language"]["conversation_language"]
             lang_config = config.get("language", {})
-            if isinstance(lang_config, dict):
-                conversation_lang = lang_config.get("conversation_language")
-            else:
-                conversation_lang = None
-            # Fallback to flat structure: config["conversation_language"]
-            if not conversation_lang:
-                conversation_lang = config.get("conversation_language", "en")
+            conversation_lang = lang_config.get("conversation", "en") if isinstance(lang_config, dict) else "en"
 
         # FIX #5: Check if USER_NAME is a template variable or empty
         has_valid_name = user_name and not user_name.startswith("{{") and not user_name.endswith("}}")
@@ -881,15 +786,6 @@ def load_user_personalization() -> dict:
             ),
             "needs_setup": not has_valid_name,  # FIX #5: Flag for setup guidance
         }
-
-        # Store for session-wide access
-        personalization_cache_file = find_project_root() / ".do" / "cache" / "personalization.json"
-        try:
-            personalization_cache_file.parent.mkdir(parents=True, exist_ok=True)
-            personalization_cache_file.write_text(json.dumps(personalization, ensure_ascii=False, indent=2))
-        except (OSError, PermissionError):
-            # Cache write errors are non-critical
-            pass
 
         return personalization
 
