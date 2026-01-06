@@ -862,13 +862,18 @@ def format_session_output() -> str:
     # Load user personalization settings
     personalization = load_user_personalization()
 
-    # Get Do version from installed package (not config.json)
+    # Get Do version from godo binary
     try:
-        from do_adk import __version__ as installed_version
-
-        do_version = installed_version
-    except ImportError:
-        # Fallback to config version if package import fails
+        result = subprocess.run(
+            ['godo', 'version'],
+            capture_output=True, text=True
+        )
+        # Parse "godo version X.Y.Z" output
+        if result.returncode == 0:
+            do_version = result.stdout.strip().replace('godo version ', '')
+        else:
+            do_version = "unknown"
+    except Exception:
         do_version = "unknown"
         if config:
             do_version = config.get("do", {}).get("version", "unknown")
