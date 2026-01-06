@@ -27,23 +27,29 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 
 ### 에이전트 수정 확인 [HARD]
 
-**Do(오케스트레이터) 책임:**
-`$DO_CONFIRM_CHANGES`가 "true"일 때, 에이전트가 파일 수정 완료 후:
-1. `git diff` 실행하여 변경사항 출력
-2. 사용자에게 변경사항 요약 보여주기
-3. AskUserQuestion으로 확인: "이 변경사항을 적용할까요?"
-   - "예, 적용" → 다음 작업 진행
-   - "아니오, 롤백" → `git checkout -- <files>` 실행
+$DO_CONFIRM_CHANGES가 "true"일 때:
 
 **에이전트 책임:**
-파일 수정 시 변경된 파일 목록을 반환하여 Do가 확인할 수 있게 함.
+1. 수정 전 계획 고지:
+   - 어떤 파일을 수정할지
+   - 어떤 내용을 변경할지 (코드 블록으로 before/after 또는 설명)
+2. 사용자 허락 요청 (AskUserQuestion):
+   - "이 수정을 진행할까요?"
+   - 옵션: "예, 진행" / "아니오, 취소"
+3. 허락 후에만 실제 수정 실행
 
-**설정 확인 방법:**
-```bash
-echo $DO_CONFIRM_CHANGES  # "true" 또는 "false"
+**예시:**
+```
+수정 예정:
+- 파일: /path/to/file.py
+- 변경 내용:
+  - 함수 foo()의 리턴값 변경
+  - 새 함수 bar() 추가
+
+[사용자 확인 요청]
 ```
 
-`$DO_CONFIRM_CHANGES`가 "false"거나 미설정이면 확인 없이 진행.
+$DO_CONFIRM_CHANGES가 "false"면 바로 수정 진행.
 
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
