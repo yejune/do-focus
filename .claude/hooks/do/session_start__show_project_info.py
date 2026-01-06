@@ -884,7 +884,7 @@ def format_session_output() -> str:
 
     # Format output with each item on separate line (reordered per user request)
     output = [
-        "🚀 Do Session Started",
+        "🤖 나는 Do다. 말하면 한다.",
         f"   📦 Version: {do_version} {version_status}",
         f"   🔄 Changes: {git_info['changes']}",
         f"   🌿 Branch: {git_info['branch']}",
