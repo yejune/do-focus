@@ -400,9 +400,8 @@ func printSuccess() {
 	fmt.Println("  - 27개 에이전트 (expert/manager/builder/mcp)")
 	fmt.Println("  - 47개 스킬 (lang/platform/workflow/domain)")
 	fmt.Println()
-	fmt.Println("설정: .do/config/sections/")
-	fmt.Println("  - language.yaml (대화 언어)")
-	fmt.Println("  - user.yaml (사용자 이름)")
+	fmt.Println("설정: /do:setup 실행하여 개인 설정")
+	fmt.Println("  - .claude/settings.local.json에 저장됨")
 	fmt.Println()
 }
 
