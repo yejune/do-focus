@@ -4,31 +4,39 @@ Claude Code용 프로젝트별 AI 개발 환경
 
 ---
 
-## 설치
+## 빠른 시작
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh
-```
-
-업데이트:
-```bash
-curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh -s -- --force
-```
+1. Claude Code 설치: `brew install anthropics/tap/claude`
+2. godo 설치: `brew install yejune/tap/godo`
+3. 프로젝트에서 초기화: `godo init` 또는 `godo update`
+4. 초기 설정: `/do:setup`
 
 ---
 
 ## 설정
 
-프로젝트별 설정은 `.do/config/sections/`에서 관리:
+`/do:setup` 실행하여 개인 설정:
 
-```yaml
-# .do/config/sections/language.yaml
-conversation_language: ko  # 대화 언어 (ko, en, ja, zh)
-code_comments: en          # 코드 주석 언어
-
-# .do/config/sections/user.yaml
-name: "사용자 이름"
+```json
+// .claude/settings.local.json (gitignore)
+{
+  "env": {
+    "DO_USER_NAME": "이름",
+    "DO_LANGUAGE": "ko",
+    "DO_COMMIT_LANGUAGE": "en",
+    "DO_AI_FOOTER": "false",
+    "DO_CONFIRM_CHANGES": "true"
+  }
+}
 ```
+
+| 환경변수 | 설명 | 옵션 |
+|---------|------|------|
+| DO_USER_NAME | 사용자 이름 | 자유 입력 |
+| DO_LANGUAGE | 대화 언어 | ko, en, ja, zh |
+| DO_COMMIT_LANGUAGE | 커밋 언어 | ko, en |
+| DO_AI_FOOTER | AI 푸터 | true, false |
+| DO_CONFIRM_CHANGES | 수정 확인 | true, false |
 
 ---
 
@@ -80,7 +88,7 @@ name: "사용자 이름"
 
 .do/
   cache/           # 캐시 및 상태 파일
-  config/          # 프로젝트 설정
+  memory/          # 세션 상태 저장
 ```
 
 ---
