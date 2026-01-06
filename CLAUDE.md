@@ -27,29 +27,32 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 
 ### 에이전트 수정 확인 [HARD]
 
-$DO_CONFIRM_CHANGES가 "true"일 때:
+$DO_CONFIRM_CHANGES가 "true"일 때, 에이전트 작업 완료 후 Do가:
 
-**에이전트 책임:**
-1. 수정 전 계획 고지:
-   - 어떤 파일을 수정할지
-   - 어떤 내용을 변경할지 (코드 블록으로 before/after 또는 설명)
-2. 사용자 허락 요청 (AskUserQuestion):
-   - "이 수정을 진행할까요?"
-   - 옵션: "예, 진행" / "아니오, 취소"
-3. 허락 후에만 실제 수정 실행
+**1. 요약 표시:**
+- `git diff --stat` (파일명 + 변경 라인 수)
+- 변경 내용 한줄 설명
+
+**2. 확인 요청** (AskUserQuestion 4개 옵션):
+- "예, 커밋" → 커밋 진행
+- "상세 보기" → 파일 리스트 표시 → 선택한 파일 diff 보기 → 다시 확인
+- "아니오, 롤백" → `git checkout -- .` 실행
+- (직접 입력) → 추가 지시 가능
 
 **예시:**
 ```
-수정 예정:
-- 파일: /path/to/file.py
-- 변경 내용:
-  - 함수 foo()의 리턴값 변경
-  - 새 함수 bar() 추가
+[수정 완료]
+- setup.md: +15 -3 (질문 2단계로 분리)
+- AGENT.md: +20 -5 (환경변수 규칙 추가)
 
-[사용자 확인 요청]
+[확인 요청]
+├─ 예, 커밋
+├─ 상세 보기
+├─ 아니오, 롤백
+└─ (직접 입력)
 ```
 
-$DO_CONFIRM_CHANGES가 "false"면 바로 수정 진행.
+$DO_CONFIRM_CHANGES가 "false"면 확인 없이 커밋.
 
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
