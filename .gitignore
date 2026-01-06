@@ -2,6 +2,9 @@
 .do/cache/
 .do/logs/
 
+# User-specific settings (use user.yaml.example as template)
+.do/config/sections/user.yaml
+
 # Python
 *.pyc
 __pycache__/

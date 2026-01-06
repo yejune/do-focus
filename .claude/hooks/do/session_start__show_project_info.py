@@ -904,13 +904,11 @@ def format_session_output() -> str:
         # Show setup guidance (based on conversation_language)
         if personalization["is_korean"]:
             output.append(
-                "   👋 환영합니다! .do/config/sections/user.yaml에서 "
-                "사용자 이름을 설정할 수 있습니다"
+                "   👋 환영합니다! /do:setup 명령으로 이름과 언어를 설정하세요"
             )
         else:
             output.append(
-                "   👋 Welcome! You can configure your name in "
-                ".do/config/sections/user.yaml"
+                "   👋 Welcome! Run /do:setup to configure your name and language"
             )
     elif personalization["has_personalization"]:
         user_greeting = personalization.get("personalized_greeting", "")

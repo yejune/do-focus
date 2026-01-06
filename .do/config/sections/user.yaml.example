@@ -1,0 +1,5 @@
+# 사용자 설정 (이 파일을 user.yaml로 복사해서 사용)
+# /do:setup 명령으로 설정하거나 직접 수정
+
+name: ""        # 사용자 이름
+language: ""    # 선호 언어: ko, en, ja, zh
