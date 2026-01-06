@@ -700,6 +700,10 @@ def format_project_metadata() -> str:
 def get_language_info(config: dict) -> dict:
     """Get language configuration information
 
+    Handles both nested and flat config structures gracefully:
+    - Nested: config["language"]["conversation_language"]
+    - Flat: config["conversation_language"]
+
     Args:
         config: Configuration dictionary
 
@@ -710,12 +714,38 @@ def get_language_info(config: dict) -> dict:
         return {
             "conversation_language": "en",
             "language_name": "English",
-            "status": "⚠️ No config",
+            "status": "⚠️ No config - run /do:setup to configure",
         }
 
+    # Try nested structure first: config["language"]["conversation_language"]
     lang_config = config.get("language", {})
-    conversation_lang = lang_config.get("conversation_language", "en")
-    lang_name = lang_config.get("conversation_language_name", "Unknown")
+    if isinstance(lang_config, dict):
+        conversation_lang = lang_config.get("conversation_language")
+        lang_name = lang_config.get("conversation_language_name")
+    else:
+        # language key exists but is not a dict (unexpected)
+        conversation_lang = None
+        lang_name = None
+
+    # Fallback to flat structure: config["conversation_language"]
+    if not conversation_lang:
+        conversation_lang = config.get("conversation_language", "en")
+    if not lang_name:
+        lang_name = config.get("conversation_language_name")
+
+    # If still no language name, derive from language code
+    if not lang_name:
+        lang_name_map = {
+            "ko": "Korean",
+            "en": "English",
+            "ja": "Japanese",
+            "zh": "Chinese",
+            "es": "Spanish",
+            "fr": "French",
+            "de": "German",
+            "ru": "Russian",
+        }
+        lang_name = lang_name_map.get(conversation_lang, "Unknown")
 
     # Language status indicator (removed Active indicator for cleaner output)
     return {"conversation_language": conversation_lang, "language_name": lang_name}
@@ -795,11 +825,28 @@ def load_user_personalization() -> dict:
         conversation_lang = os.getenv("MOAI_CONVERSATION_LANG")
 
         # Fallback to config file if environment variables not set
+        # Handle both nested and flat config structures gracefully
         if user_name is None and config:
-            user_name = config.get("user", {}).get("name", "")
+            # Try nested structure first: config["user"]["name"]
+            user_config = config.get("user", {})
+            if isinstance(user_config, dict):
+                user_name = user_config.get("name", "")
+            else:
+                user_name = ""
+            # Fallback to flat structure: config["name"]
+            if not user_name:
+                user_name = config.get("name", "")
 
         if conversation_lang is None and config:
-            conversation_lang = config.get("language", {}).get("conversation_language", "en")
+            # Try nested structure first: config["language"]["conversation_language"]
+            lang_config = config.get("language", {})
+            if isinstance(lang_config, dict):
+                conversation_lang = lang_config.get("conversation_language")
+            else:
+                conversation_lang = None
+            # Fallback to flat structure: config["conversation_language"]
+            if not conversation_lang:
+                conversation_lang = config.get("conversation_language", "en")
 
         # FIX #5: Check if USER_NAME is a template variable or empty
         has_valid_name = user_name and not user_name.startswith("{{") and not user_name.endswith("}}")
