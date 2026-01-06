@@ -1,0 +1,87 @@
+{
+  "style": "pair",
+  "language": "ko",
+  "tdd": true,
+  "testCoverage": 80,
+  "git": {
+    "autoBranch": true,
+    "commitPerFeature": true
+  },
+  "code": {
+    "explicitStyle": true,
+    "typeHints": true,
+    "docstrings": true
+  },
+  "aiFooter": "optional",
+  "commit": {
+    "detailed": true,
+    "format": "title + body",
+    "requirement": "diff와 로그만으로 의도 파악 가능해야 함"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(git stash:*)",
+      "Bash(pytest:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Task",
+      "TodoWrite",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(git reset --hard:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -rf /*:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run $CLAUDE_PROJECT_DIR/.claude/hooks/do/session_start__show_project_info.py"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run $CLAUDE_PROJECT_DIR/.claude/hooks/do/session_end__auto_cleanup.py"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run $CLAUDE_PROJECT_DIR/.claude/hooks/do/subagent_stop__track_background_tasks.py"
+          }
+        ]
+      }
+    ]
+  }
+}

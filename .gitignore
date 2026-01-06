@@ -1,0 +1,20 @@
+# Cache and logs
+.do/cache/
+.do/logs/
+
+# Python
+*.pyc
+__pycache__/
+
+# Environment
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
