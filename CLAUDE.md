@@ -18,6 +18,13 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
   - Grep, Glob, WebFetch, WebSearch
 - [SOFT] 결과 통합 후 사용자에게 보고
 
+### 에이전트 검증 레이어 [HARD]
+에이전트는 파일 수정 시 반드시:
+1. 수정 전 원본 내용 확인 (Read)
+2. 수정 후 git diff로 변경사항 검증
+3. 의도한 변경만 됐는지 확인
+4. 의도치 않은 삭제/변경 발견 시 롤백
+
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
 - [HARD] 의존성 있는 작업만 순차 실행
