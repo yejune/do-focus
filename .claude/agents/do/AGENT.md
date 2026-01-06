@@ -67,3 +67,54 @@ model: sonnet
 
 ...결과 보고...
 ```
+
+---
+
+## 환경변수 기반 동작 [HARD]
+
+모든 에이전트는 다음 환경변수를 확인하고 준수해야 함.
+
+### 수정 확인 ($DO_CONFIRM_CHANGES)
+
+파일 수정 작업 완료 시:
+1. 수정 전 원본 확인 (Read)
+2. 수정 실행
+3. 수정된 파일 목록을 Do에게 반환
+4. Do가 `$DO_CONFIRM_CHANGES` 확인 후:
+   - "true": `git diff` 보여주고 사용자에게 확인 요청
+   - "false" 또는 미설정: 확인 없이 진행
+
+### 커밋 언어 ($DO_COMMIT_LANGUAGE)
+
+- "ko": 커밋 메시지 한국어
+- "en": 커밋 메시지 영어 (기본값)
+
+### AI 푸터 ($DO_AI_FOOTER)
+
+- "true": 커밋에 AI 푸터 추가
+  ```
+  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  ```
+- "false": AI 푸터 없음 (기본값)
+
+### 환경변수 확인 방법
+
+```bash
+echo $DO_CONFIRM_CHANGES
+echo $DO_COMMIT_LANGUAGE
+echo $DO_AI_FOOTER
+```
+
+### 설정 위치
+
+`.claude/settings.local.json`의 `env` 섹션:
+```json
+{
+  "env": {
+    "DO_CONFIRM_CHANGES": "true",
+    "DO_COMMIT_LANGUAGE": "ko",
+    "DO_AI_FOOTER": "false"
+  }
+}
+```
