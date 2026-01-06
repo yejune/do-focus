@@ -82,246 +82,97 @@ except ImportError:
         pass
 
 
-# Import config cache
-try:
-    from core.config_cache import get_cached_config, get_cached_spec_progress
-except ImportError:
-    # Fallback to direct functions if cache not available
-    # Try PyYAML first, then use simple parser
+# Environment variable helpers for configuration
+import os
+
+
+def get_user_name() -> str:
+    """Get user name from environment variable."""
+    return os.environ.get("DO_USER_NAME", "")
+
+
+def get_language() -> str:
+    """Get conversation language from environment variable."""
+    return os.environ.get("DO_LANGUAGE", "en")
+
+
+def get_commit_language() -> str:
+    """Get commit language from environment variable."""
+    return os.environ.get("DO_COMMIT_LANGUAGE", "en")
+
+
+def get_ai_footer() -> bool:
+    """Get AI footer setting from environment variable."""
+    return os.environ.get("DO_AI_FOOTER", "false").lower() == "true"
+
+
+def get_confirm_changes() -> bool:
+    """Get confirm changes setting from environment variable."""
+    return os.environ.get("DO_CONFIRM_CHANGES", "false").lower() == "true"
+
+
+def is_korean() -> bool:
+    """Check if conversation language is Korean."""
+    return get_language() == "ko"
+
+
+def get_cached_spec_progress():
+    """Get SPEC progress information - FIXED to use YAML frontmatter parsing"""
+    # FIX #3: Use absolute path from find_project_root() to ensure current project only
+    project_root = find_project_root()
+    specs_dir = project_root / ".do" / "specs"
+
+    if not specs_dir.exists():
+        return {"completed": 0, "total": 0, "percentage": 0}
     try:
-        import yaml as yaml_fallback
+        # Only scan SPEC folders in THIS project's .do/specs/ directory
+        spec_folders = [d for d in specs_dir.iterdir() if d.is_dir() and d.name.startswith("SPEC-")]
+        total = len(spec_folders)
 
-        HAS_YAML_FALLBACK = True
-    except ImportError:
-        HAS_YAML_FALLBACK = False
-
-    def _simple_yaml_parse(content: str) -> dict:
-        """Simple YAML parser for basic key-value configs without PyYAML dependency.
-
-        Handles:
-        - Top-level keys with nested values
-        - String values (quoted or unquoted, including empty strings)
-        - Boolean values (true/false)
-        - Numeric values
-        - Comments (lines starting with # or inline after values)
-
-        Does NOT handle:
-        - Lists
-        - Complex nested structures beyond 2 levels
-        - Multi-line strings
-        """
-        result = {}
-        current_section = None
-        lines = content.split("\n")
-
-        for line in lines:
-            # Skip empty lines and comments
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
+        # FIX: Parse YAML frontmatter to check for status: completed
+        completed = 0
+        for folder in spec_folders:
+            spec_file = folder / "spec.md"
+            if not spec_file.exists():
                 continue
 
-            # Count leading spaces for indentation
-            indent = len(line) - len(line.lstrip())
+            try:
+                # Read spec.md content
+                content = spec_file.read_text(encoding="utf-8")
 
-            # Check if this is a key-value pair
-            if ":" in stripped:
-                key_part, _, value_part = stripped.partition(":")
-                key = key_part.strip()
-                value = value_part.strip()
+                # Parse YAML frontmatter (between --- delimiters)
+                if content.startswith("---"):
+                    yaml_end = content.find("---", 3)
+                    if yaml_end > 0:
+                        yaml_content = content[3:yaml_end]
+                        # Check for status: completed (with or without quotes)
+                        if "status: completed" in yaml_content or 'status: "completed"' in yaml_content:
+                            completed += 1
+            except (OSError, UnicodeDecodeError):
+                # File read failure or encoding error - considered incomplete
+                pass
 
-                # Track if value was explicitly quoted (including empty strings)
-                was_quoted = False
-
-                # Handle quoted strings first - extract value within quotes
-                if value.startswith('"'):
-                    # Find the closing quote
-                    close_quote = value.find('"', 1)
-                    if close_quote > 0:
-                        value = value[1:close_quote]
-                        was_quoted = True
-                    elif value == '""':
-                        # Handle explicit empty string ""
-                        value = ""
-                        was_quoted = True
-                elif value.startswith("'"):
-                    # Find the closing quote
-                    close_quote = value.find("'", 1)
-                    if close_quote > 0:
-                        value = value[1:close_quote]
-                        was_quoted = True
-                    elif value == "''":
-                        # Handle explicit empty string ''
-                        value = ""
-                        was_quoted = True
-                else:
-                    # Remove inline comments for unquoted values
-                    if "#" in value:
-                        value = value.split("#")[0].strip()
-
-                # Top-level key (no indentation or minimal indentation)
-                if indent == 0:
-                    if value or was_quoted:
-                        # Simple key: value (including empty quoted strings)
-                        result[key] = _parse_simple_value(value)
-                    else:
-                        # Section header (e.g., "user:", "language:")
-                        current_section = key
-                        result[current_section] = {}
-                elif current_section and indent > 0:
-                    # Nested key under current section
-                    if value or was_quoted:
-                        # Store value (including empty quoted strings)
-                        result[current_section][key] = _parse_simple_value(value)
-                    else:
-                        # Nested section (2-level nesting) - only when no value at all
-                        result[current_section][key] = {}
-
-        return result
-
-    def _parse_simple_value(value: str):
-        """Parse a simple value string into appropriate Python type."""
-        if not value:
-            return ""
-
-        # Boolean
-        if value.lower() == "true":
-            return True
-        if value.lower() == "false":
-            return False
-
-        # Numeric
-        try:
-            if "." in value:
-                return float(value)
-            return int(value)
-        except ValueError:
-            pass
-
-        return value
-
-    def _load_yaml_file(file_path: Path) -> dict:
-        """Load a YAML file using PyYAML or simple parser."""
-        if not file_path.exists():
-            return {}
-        try:
-            content = file_path.read_text(encoding="utf-8")
-            if HAS_YAML_FALLBACK:
-                return yaml_fallback.safe_load(content) or {}
-            else:
-                return _simple_yaml_parse(content)
-        except Exception:
-            return {}
-
-    def get_cached_config():
-        """Load config from unified config.yaml.
-
-        Reads configuration from .do/config/config.yaml only.
-        Returns None if config.yaml does not exist.
-        """
-        project_root = find_project_root()
-        config_dir = project_root / ".do" / "config"
-
-        # Load unified config file (config.yaml only)
-        main_config_path = config_dir / "config.yaml"
-        return _load_yaml_file(main_config_path) or None
-
-    def get_cached_spec_progress():
-        """Get SPEC progress information - FIXED to use YAML frontmatter parsing"""
-        # FIX #3: Use absolute path from find_project_root() to ensure current project only
-        project_root = find_project_root()
-        specs_dir = project_root / ".do" / "specs"
-
-        if not specs_dir.exists():
-            return {"completed": 0, "total": 0, "percentage": 0}
-        try:
-            # Only scan SPEC folders in THIS project's .do/specs/ directory
-            spec_folders = [d for d in specs_dir.iterdir() if d.is_dir() and d.name.startswith("SPEC-")]
-            total = len(spec_folders)
-
-            # FIX: Parse YAML frontmatter to check for status: completed
-            completed = 0
-            for folder in spec_folders:
-                spec_file = folder / "spec.md"
-                if not spec_file.exists():
-                    continue
-
-                try:
-                    # Read spec.md content
-                    content = spec_file.read_text(encoding="utf-8")
-
-                    # Parse YAML frontmatter (between --- delimiters)
-                    if content.startswith("---"):
-                        yaml_end = content.find("---", 3)
-                        if yaml_end > 0:
-                            yaml_content = content[3:yaml_end]
-                            # Check for status: completed (with or without quotes)
-                            if "status: completed" in yaml_content or 'status: "completed"' in yaml_content:
-                                completed += 1
-                except (OSError, UnicodeDecodeError):
-                    # File read failure or encoding error - considered incomplete
-                    pass
-
-            percentage = (completed / total * 100) if total > 0 else 0
-            return {
-                "completed": completed,
-                "total": total,
-                "percentage": round(percentage, 0),
-            }
-        except (OSError, PermissionError):
-            # Directory access or permission errors
-            return {"completed": 0, "total": 0, "percentage": 0}
+        percentage = (completed / total * 100) if total > 0 else 0
+        return {
+            "completed": completed,
+            "total": total,
+            "percentage": round(percentage, 0),
+        }
+    except (OSError, PermissionError):
+        # Directory access or permission errors
+        return {"completed": 0, "total": 0, "percentage": 0}
 
 
 def should_show_setup_messages() -> bool:
-    """Determine whether to show setup completion messages (cached version).
+    """Determine whether to show setup completion messages.
 
-    Logic:
-    1. Read .do/config/config.yaml (using cache)
-    2. Check session.suppress_setup_messages flag
-    3. If suppress_setup_messages is False, always show messages
-    4. If suppress_setup_messages is True:
-       - Check if more than 7 days have passed since suppression
-       - Show messages if time threshold exceeded
-
-    Uses ConfigCache to avoid repeated config file reads.
+    Always returns True - setup messages are always shown.
+    Environment variables control the actual content displayed.
 
     Returns:
-        bool: True if messages should be shown, False otherwise
+        bool: True (always show messages)
     """
-    config = get_cached_config()
-
-    # If config doesn't exist, show messages
-    if not config:
-        return True
-
-    # Check project initialization status
-    if not config.get("project", {}).get("initialized", False):
-        return True
-
-    # Check suppress_setup_messages flag
-    session_config = config.get("session", {})
-    suppress = session_config.get("suppress_setup_messages", False)
-
-    if not suppress:
-        # Flag is False, show messages
-        return True
-
-    # Flag is True, check time threshold (7 days)
-    suppressed_at_str = session_config.get("setup_messages_suppressed_at")
-    if not suppressed_at_str:
-        # No timestamp recorded, show messages
-        return True
-
-    try:
-        suppressed_at = datetime.fromisoformat(suppressed_at_str)
-        now = datetime.now(suppressed_at.tzinfo) if suppressed_at.tzinfo else datetime.now()
-        days_passed = (now - suppressed_at).days
-
-        # Show messages if more than 7 days have passed
-        return days_passed >= 7
-    except (ValueError, TypeError):
-        # If timestamp is invalid, show messages
-        return True
+    return True
 
 
 def check_git_initialized() -> bool:
@@ -468,31 +319,22 @@ def _run_git_command_fallback(cmd: list[str]) -> str:
         return ""
 
 
-def get_git_strategy_info(config: dict) -> dict:
-    """Get git strategy information from config
+def get_git_strategy_info() -> dict:
+    """Get git strategy information from environment variables
 
     FIX #2: NEW FEATURE - Display git strategy information
 
-    Args:
-        config: Configuration dictionary
+    Reads from environment variables:
+    - DO_GIT_FLOW: Git flow mode (default: "manual")
+    - DO_AUTO_BRANCH: Auto branch creation (default: "false")
 
     Returns:
         Dictionary with git_flow and auto_branch information
     """
-    if not config:
-        return {"git_flow": "unknown", "auto_branch": "unknown"}
+    git_flow = os.environ.get("DO_GIT_FLOW", "manual")
+    auto_branch = os.environ.get("DO_AUTO_BRANCH", "false").lower() == "true"
 
-    git_strategy = config.get("git_strategy", {})
-    mode = git_strategy.get("mode", "manual")
-
-    # Get auto_branch setting from branch_creation config
-    branch_creation = git_strategy.get("branch_creation", {})
-    auto_enabled = branch_creation.get("auto_enabled", False)
-
-    # Determine auto_branch display
-    auto_branch_display = "Yes" if auto_enabled else "No"
-
-    return {"git_flow": mode, "auto_branch": auto_branch_display}
+    return {"git_flow": git_flow, "auto_branch": "Yes" if auto_branch else "No"}
 
 
 def _parse_version(version_str: str) -> tuple[int, ...]:
@@ -644,36 +486,22 @@ def format_project_metadata() -> str:
     Returns:
         Formatted project metadata string with version and Git info
     """
-    do_version = "unknown"
-    config = get_cached_config()
-    if config:
-        do_version = config.get("do", {}).get("version", "unknown")
+    do_version = os.environ.get("DO_VERSION", "unknown")
 
     version_status, _has_update = check_version_update()
     return f"📦 Version: {do_version} {version_status}"
 
 
-def get_language_info(config: dict) -> dict:
-    """Get language configuration information
+def get_language_info() -> dict:
+    """Get language configuration information from environment variables
 
-    Reads from config.yaml nested structure only:
-    - config["language"]["conversation"]
-
-    Args:
-        config: Configuration dictionary
+    Reads from environment variable:
+    - DO_LANGUAGE: Conversation language code (default: "en")
 
     Returns:
         Dictionary with language info including display name
     """
-    if not config:
-        return {
-            "conversation_language": "en",
-            "language_name": "English",
-        }
-
-    # Read from nested structure: config["language"]["conversation"]
-    lang_config = config.get("language", {})
-    conversation_lang = lang_config.get("conversation", "en") if isinstance(lang_config, dict) else "en"
+    conversation_lang = get_language()
 
     # Derive language name from language code
     lang_name_map = {
@@ -692,140 +520,92 @@ def get_language_info(config: dict) -> dict:
 
 
 def load_user_personalization() -> dict:
-    """Load user personalization settings using centralized language configuration resolver
+    """Load user personalization settings from environment variables
 
     FIX #5: Check for template variables and provide setup guidance
 
-    Uses the new LanguageConfigResolver which provides:
-    - Environment variable priority handling
-    - Configuration file integration
-    - Consistency validation and auto-correction
-    - Template variable export capabilities
+    Reads from environment variables:
+    - DO_USER_NAME: User name
+    - DO_LANGUAGE: Conversation language code
 
     Returns:
         Dictionary with user personalization information
     """
-    try:
-        # Import the centralized language configuration resolver
-        from src.do_adk.core.language_config_resolver import get_resolver
+    user_name = get_user_name()
+    conversation_lang = get_language()
 
-        # Get resolver instance and resolve configuration
-        resolver = get_resolver(str(find_project_root()))
-        config = resolver.resolve_config()
+    # FIX #5: Check if USER_NAME is a template variable or empty
+    has_valid_name = user_name and not user_name.startswith("{{") and not user_name.endswith("}}")
 
-        # FIX #5: Check if USER_NAME is a template variable or empty
-        user_name = config.get("user_name", "")
-        has_valid_name = user_name and not user_name.startswith("{{") and not user_name.endswith("}}")
+    # Get language name
+    lang_name_map = {
+        "ko": "Korean",
+        "en": "English",
+        "ja": "Japanese",
+        "zh": "Chinese",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "ru": "Russian",
+    }
+    lang_name = lang_name_map.get(conversation_lang, "Unknown")
 
-        # Build personalization info using resolved configuration
-        personalization = {
-            "user_name": user_name if has_valid_name else "",
-            "conversation_language": config.get("conversation_language", "en"),
-            "conversation_language_name": config.get("conversation_language_name", "English"),
-            "agent_prompt_language": config.get("agent_prompt_language", "en"),
-            "is_korean": config.get("conversation_language") == "ko",
-            "has_personalization": has_valid_name,
-            "config_source": config.get("config_source", "default"),
-            "personalized_greeting": (resolver.get_personalized_greeting(config) if has_valid_name else ""),
-            "needs_setup": not has_valid_name,  # FIX #5: Flag for setup guidance
-        }
+    # Build personalization info
+    is_korean_lang = conversation_lang == "ko"
+    personalization = {
+        "user_name": user_name if has_valid_name else "",
+        "conversation_language": conversation_lang,
+        "conversation_language_name": lang_name,
+        "is_korean": is_korean_lang,
+        "has_personalization": has_valid_name,
+        "config_source": "environment",
+        "personalized_greeting": (
+            f"{user_name}님"
+            if has_valid_name and is_korean_lang
+            else user_name
+            if has_valid_name
+            else ""
+        ),
+        "needs_setup": not has_valid_name,  # FIX #5: Flag for setup guidance
+    }
 
-        return personalization
-
-    except ImportError:
-        # Fallback to basic implementation if resolver not available
-        import os
-
-        # Load config from cache or direct file
-        config = get_cached_config()
-
-        # Environment variables take priority
-        user_name = os.getenv("MOAI_USER_NAME")
-        conversation_lang = os.getenv("MOAI_CONVERSATION_LANG")
-
-        # Fallback to config file if environment variables not set
-        # Read from config.yaml nested structure only
-        if user_name is None and config:
-            user_config = config.get("user", {})
-            user_name = user_config.get("name", "") if isinstance(user_config, dict) else ""
-
-        if conversation_lang is None and config:
-            lang_config = config.get("language", {})
-            conversation_lang = lang_config.get("conversation", "en") if isinstance(lang_config, dict) else "en"
-
-        # FIX #5: Check if USER_NAME is a template variable or empty
-        has_valid_name = user_name and not user_name.startswith("{{") and not user_name.endswith("}}")
-
-        # Get language name
-        lang_name_map = {
-            "ko": "Korean",
-            "en": "English",
-            "ja": "Japanese",
-            "zh": "Chinese",
-            "es": "Spanish",
-            "fr": "French",
-            "de": "German",
-            "ru": "Russian",
-        }
-        lang_name = lang_name_map.get(conversation_lang, "Unknown")
-
-        # Build personalization info
-        personalization = {
-            "user_name": user_name if has_valid_name else "",
-            "conversation_language": conversation_lang or "en",
-            "conversation_language_name": lang_name,
-            "is_korean": conversation_lang == "ko",
-            "has_personalization": has_valid_name,
-            "config_source": "fallback",
-            "personalized_greeting": (
-                f"{user_name}님"
-                if has_valid_name and conversation_lang == "ko"
-                else user_name
-                if has_valid_name
-                else ""
-            ),
-            "needs_setup": not has_valid_name,  # FIX #5: Flag for setup guidance
-        }
-
-        return personalization
+    return personalization
 
 
 def format_session_output() -> str:
     """Format the complete session start output with proper line alignment (optimized).
 
-    Uses caches for config and SPEC progress to minimize file I/O.
+    Uses environment variables for configuration.
     Parallel git command execution for fast data gathering.
     """
-    # Gather information (in parallel for git, cached for config/SPEC)
+    # Gather information (in parallel for git)
     git_info = get_git_info()
 
-    # Get config for language and version info
-    config = get_cached_config()
-
-    # Load user personalization settings
+    # Load user personalization settings from environment variables
     personalization = load_user_personalization()
 
-    # Get Do version from godo binary
-    try:
-        result = subprocess.run(
-            ['godo', 'version'],
-            capture_output=True, text=True
-        )
-        # Parse "godo version X.Y.Z" output
-        if result.returncode == 0:
-            do_version = result.stdout.strip().replace('godo version ', '')
-        else:
+    # Get Do version from environment variable or godo binary
+    do_version = os.environ.get("DO_VERSION", "")
+    if not do_version:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['godo', 'version'],
+                capture_output=True, text=True
+            )
+            # Parse "godo version X.Y.Z" output
+            if result.returncode == 0:
+                do_version = result.stdout.strip().replace('godo version ', '')
+            else:
+                do_version = "unknown"
+        except Exception:
             do_version = "unknown"
-    except Exception:
-        do_version = "unknown"
-        if config:
-            do_version = config.get("do", {}).get("version", "unknown")
 
-    # Get language info
-    lang_info = get_language_info(config)
+    # Get language info from environment variables
+    lang_info = get_language_info()
 
-    # FIX #2: Get git strategy info
-    git_strategy = get_git_strategy_info(config)
+    # FIX #2: Get git strategy info from environment variables
+    git_strategy = get_git_strategy_info()
 
     # Check for version updates (uses Phase 1 cache)
     version_status, _has_update = check_version_update()
@@ -854,17 +634,15 @@ def format_session_output() -> str:
                 "   👋 Welcome! Run /do:setup to configure your name and language"
             )
     elif personalization["has_personalization"]:
-        user_greeting = personalization.get("personalized_greeting", "")
-        if user_greeting:
-            if personalization["is_korean"]:
-                greeting = f"   👋 다시 오신 것을 환영합니다, {user_greeting}!"
+        user_name = personalization.get("user_name", "")
+        if personalization["is_korean"]:
+            # Korean: Add "님" suffix only if name doesn't already end with it
+            if user_name.endswith("님"):
+                greeting = f"   👋 다시 오신 것을 환영합니다, {user_name}!"
             else:
-                greeting = f"   👋 Welcome back, {user_greeting}!"
+                greeting = f"   👋 다시 오신 것을 환영합니다, {user_name}님!"
         else:
-            if personalization["is_korean"]:
-                greeting = f"   👋 다시 오신 것을 환영합니다, {personalization['user_name']}님!"
-            else:
-                greeting = f"   👋 Welcome back, {personalization['user_name']}!"
+            greeting = f"   👋 Welcome back, {user_name}!"
         output.append(greeting)
 
     # Configuration source is now handled silently for cleaner output

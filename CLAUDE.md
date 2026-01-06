@@ -25,13 +25,23 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 3. 의도한 변경만 됐는지 확인
 4. 의도치 않은 삭제/변경 발견 시 롤백 후 재시도
 
-### 에이전트 수정 확인 (config.yaml의 agent.confirm_changes)
-agent.confirm_changes가 true일 때:
-1. 파일 수정 후 git diff로 변경사항 출력
-2. AskUserQuestion으로 "계속 진행할까요?" 확인
-3. 사용자 확인 후 다음 작업 진행
+### 에이전트 수정 확인 [HARD]
 
-agent.confirm_changes가 false면 바로 진행 (기본값)
+파일 수정 전 `.do/config/config.yaml`의 `agent.confirm_changes` 확인:
+
+**confirm_changes: true일 때:**
+1. 파일 수정 완료 후 `git diff` 실행
+2. 변경사항을 사용자에게 보여주기
+3. AskUserQuestion으로 확인:
+   - "이 변경사항을 적용할까요?"
+   - 옵션: "예, 적용" / "아니오, 롤백"
+4. "아니오" 선택 시 `git checkout -- <file>` 으로 롤백
+
+**confirm_changes: false일 때:**
+- 확인 없이 바로 진행 (기본값)
+
+**설정 파일 없을 때:**
+- 기본값(false) 적용, 확인 없이 진행
 
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
@@ -40,8 +50,8 @@ agent.confirm_changes가 false면 바로 진행 (기본값)
 
 ### 3. Response Format
 - [HARD] 에이전트 위임 시 응답은 `[Do]`로 시작
-- [HARD] AI 푸터/서명 금지 (🤖 Generated, Co-Authored-By 등)
-- 응답 스타일은 `/do:style`로 선택 (기본: Pair)
+- AI 푸터/서명: `commit.ai_footer` 설정에 따름 (기본값: false)
+- 응답 스타일: `style` 설정값 또는 `/do:style`로 선택 (기본: pair)
 
 ---
 
@@ -126,6 +136,7 @@ agent.confirm_changes가 false면 바로 진행 (기본값)
 - 절대 금지: `git reset --hard`, `git push --force`
 
 ### 커밋 메시지 규칙 [HARD]
+- **언어**: `language.commit` 설정에 따름 (ko/en, 기본값: en)
 - **제목**: `type: 무엇을 했는지` (50자 이내)
   - type: feat, fix, refactor, docs, test, chore
 - **본문**: 왜 했는지, 어떻게 했는지 (선택)
@@ -149,6 +160,11 @@ feat: Add user authentication with JWT
   - 커밋할 때마다 릴리즈하는 것이 아님 - 큰 작업 단위로만
   - "예, 릴리즈" 선택 시: `git add -A && git commit && git push && tobrew release --patch`
 
+### 플랜 최신화 규칙
+- `/do:plan`으로 생성된 플랜 파일: `.do/plans/{YYYY}/{MM}/{DD}.{제목}.md`
+- 개발 중 플랜이 변경되면 원본 플랜 파일도 최신화
+- 플랜 파일에 변경 이력 기록 (## 변경 이력 섹션)
+
 ### 코드 스타일
 - 타입 힌트, 독스트링 작성
 - 프로젝트 기존 스타일 따르기
@@ -159,9 +175,48 @@ feat: Add user authentication with JWT
 
 ---
 
+## 설정 파일 구조
+
+### .claude/settings.json (프로젝트 공유, git 커밋)
+```json
+{
+  "outputStyle": "pair",
+  "permissions": { ... },
+  "hooks": { ... }
+}
+```
+- Claude Code 공식 필드만 사용
+- 팀과 공유되는 설정
+
+### .claude/settings.local.json (개인 설정, gitignore)
+```json
+{
+  "env": {
+    "DO_USER_NAME": "이름",
+    "DO_LANGUAGE": "ko",
+    "DO_COMMIT_LANGUAGE": "en",
+    "DO_AI_FOOTER": "false",
+    "DO_CONFIRM_CHANGES": "true"
+  }
+}
+```
+- `/do:setup`으로 설정
+- hook에서 환경변수로 접근: `$DO_USER_NAME`, `$DO_LANGUAGE` 등
+
+### 환경변수 목록
+| 변수 | 설명 | 기본값 |
+|-----|------|-------|
+| `DO_USER_NAME` | 사용자 이름 | "" |
+| `DO_LANGUAGE` | 대화 언어 | "en" |
+| `DO_COMMIT_LANGUAGE` | 커밋 메시지 언어 | "en" |
+| `DO_AI_FOOTER` | AI 푸터 추가 | "false" |
+| `DO_CONFIRM_CHANGES` | 수정 확인 | "false" |
+
+---
+
 ## 스타일 전환
 
-`/do:style` 명령으로 스타일 선택. 선택된 스타일에 따라 행동:
+`style` 설정값 또는 `/do:style` 명령으로 스타일 선택. 선택된 스타일에 따라 행동:
 
 ### Sprint (민첩한 실행자)
 - 말 최소화, 바로 실행
