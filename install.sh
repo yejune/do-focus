@@ -1,88 +1,78 @@
-#!/bin/bash
-# Do - Claude Code Project Template Installer
-#
-# 사용법:
-#   curl -fsSL https://raw.githubusercontent.com/USER/do/main/install.sh | bash
-#
-# 이 스크립트는 현재 프로젝트에 Do 설정을 설치합니다.
-# 프로젝트 레벨 설정은 사용자 레벨(~/.claude/)보다 우선합니다.
+#!/bin/sh
+# Do - Claude Code 프로젝트 환경 설치
+# 사용법: curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh
 
 set -e
 
-# GitHub 저장소 설정 (배포 시 수정)
-REPO="USER/do"
-BRANCH="main"
-BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
-
-# 색상
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
 NC='\033[0m'
 
 echo ""
-echo -e "${GREEN}Do${NC} - 말하면 한다"
+echo "${GREEN}Do${NC} - Claude Code 프로젝트 환경"
 echo "================================"
 echo ""
 
-# 기존 설정 확인
-if [ -f "CLAUDE.md" ]; then
-  echo -e "${YELLOW}경고: 기존 CLAUDE.md가 있습니다.${NC}"
-  read -p "덮어쓸까요? (y/N) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "설치 취소됨"
-    exit 1
-  fi
+# 이미 설치 확인
+if [ -d ".claude/agents/do" ] && [ "$1" != "--force" ]; then
+    echo "${YELLOW}이미 설치됨. 업데이트: curl ... | sh -s -- --force${NC}"
+    exit 0
 fi
 
-# 디렉토리 생성
-echo "디렉토리 생성..."
-mkdir -p .claude/agents/do
-mkdir -p .claude/commands/do
-mkdir -p .claude/hooks/do
-mkdir -p .claude/styles
+# 임시 디렉토리
+TMP=$(mktemp -d)
+trap "rm -rf $TMP" EXIT
 
-# CLAUDE.md 다운로드
-echo "CLAUDE.md 다운로드..."
-curl -fsSL "${BASE_URL}/CLAUDE.md" -o CLAUDE.md
+# 다운로드
+echo "다운로드 중..."
+git clone --depth 1 --quiet https://github.com/yejune/do.git "$TMP/do" 2>/dev/null
 
-# settings.json 다운로드
-echo "settings.json 다운로드..."
-curl -fsSL "${BASE_URL}/.claude/settings.json" -o .claude/settings.json
+# 복사
+echo "설치 중..."
+mkdir -p .claude .do
 
-# 스타일 다운로드
-echo "스타일 다운로드..."
-for style in sprint pair direct; do
-  curl -fsSL "${BASE_URL}/.claude/styles/${style}.md" -o ".claude/styles/${style}.md" 2>/dev/null || true
-done
+# .claude 복사 (기존 settings.json 보존)
+if [ -f ".claude/settings.json" ]; then
+    cp .claude/settings.json "$TMP/settings.backup.json"
+fi
 
-# 커맨드 다운로드
-echo "커맨드 다운로드..."
-curl -fsSL "${BASE_URL}/.claude/commands/do/style.md" -o ".claude/commands/do/style.md" 2>/dev/null || true
+cp -r "$TMP/do/.claude/agents" .claude/
+cp -r "$TMP/do/.claude/skills" .claude/
+cp -r "$TMP/do/.claude/hooks" .claude/
+cp -r "$TMP/do/.claude/commands" .claude/
+cp -r "$TMP/do/.claude/styles" .claude/
 
-# 에이전트 다운로드 (핵심만)
-echo "에이전트 다운로드..."
-CORE_AGENTS=(
-  "expert-backend" "expert-frontend" "expert-database"
-  "manager-tdd" "manager-git" "manager-docs"
-)
+if [ -f "$TMP/settings.backup.json" ]; then
+    echo "${YELLOW}settings.json 보존됨 (새 버전: .claude/settings.json.new)${NC}"
+    cp "$TMP/do/.claude/settings.json" .claude/settings.json.new
+else
+    cp "$TMP/do/.claude/settings.json" .claude/
+fi
 
-for agent in "${CORE_AGENTS[@]}"; do
-  curl -fsSL "${BASE_URL}/.claude/agents/do/${agent}.md" -o ".claude/agents/do/${agent}.md" 2>/dev/null || true
-done
+# .do 복사 (기존 설정 보존)
+if [ ! -d ".do/config" ]; then
+    cp -r "$TMP/do/.do/"* .do/ 2>/dev/null || true
+fi
+
+# CLAUDE.md
+if [ ! -f "CLAUDE.md" ]; then
+    cp "$TMP/do/CLAUDE.md" .
+else
+    echo "${YELLOW}CLAUDE.md 보존됨 (새 버전: CLAUDE.md.new)${NC}"
+    cp "$TMP/do/CLAUDE.md" CLAUDE.md.new
+fi
+
+# 권한 설정
+chmod +x .claude/hooks/do/*.py 2>/dev/null || true
 
 echo ""
-echo -e "${GREEN}설치 완료!${NC}"
+echo "${GREEN}설치 완료!${NC}"
 echo ""
-echo "================================"
+echo "포함:"
+echo "  - 27개 에이전트 (expert/manager/builder/mcp)"
+echo "  - 47개 스킬 (lang/platform/workflow/domain)"
 echo ""
-echo "사용법:"
-echo "  \"로그인 기능 만들어줘\""
-echo "  \"테스트 작성해줘\""
-echo "  \"버그 고쳐줘\""
+echo "설정: .do/config/sections/"
+echo "  - language.yaml (대화 언어)"
+echo "  - user.yaml (사용자 이름)"
 echo ""
-echo "스타일 변경:"
-echo "  /do style"
-echo ""
-echo "================================"

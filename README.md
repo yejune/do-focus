@@ -6,36 +6,13 @@ Claude Code용 프로젝트별 AI 개발 환경
 
 ## 설치
 
-### 방법 1: 프로젝트에 직접 복사
-
 ```bash
-# Do 클론
-git clone https://github.com/yejune/do /tmp/do
-
-# 원하는 프로젝트로 복사
-cp -r /tmp/do/.claude /your/project/
-cp -r /tmp/do/.do /your/project/
-cp /tmp/do/CLAUDE.md /your/project/
-
-# 정리
-rm -rf /tmp/do
+curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh
 ```
 
-### 방법 2: Git subtree (업데이트 용이)
-
+업데이트:
 ```bash
-cd /your/project
-git subtree add --prefix=.claude https://github.com/yejune/do.git main --squash
-```
-
-### 방법 3: Git submodule
-
-```bash
-cd /your/project
-git submodule add https://github.com/yejune/do.git .do-kit
-ln -s .do-kit/.claude .claude
-ln -s .do-kit/.do .do
-cp .do-kit/CLAUDE.md .
+curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh -s -- --force
 ```
 
 ---
