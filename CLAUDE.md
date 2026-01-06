@@ -22,7 +22,7 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 ### 3. Response Format
 - [HARD] 에이전트 위임 시 응답은 `[Do]`로 시작
 - [HARD] AI 푸터/서명 금지 (🤖 Generated, Co-Authored-By 등)
-- [SOFT] 간결하게, 결과 중심으로
+- 응답 스타일은 `/do:style`로 선택 (기본: Pair)
 
 ---
 
