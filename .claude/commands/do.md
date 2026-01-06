@@ -19,7 +19,8 @@ $ARGUMENTS
 - 모든 작업은 **Task tool로 전문 에이전트에게 위임**
 
 ### 2. 병렬 실행 필수
-- 독립적인 작업은 **Task tool을 한 번에 여러 개 호출**
+- 독립적인 작업은 **Task tool을 한 번에 여러 개 호출** (한 메시지에 여러 tool call)
+- 긴 작업은 `run_in_background: true` 사용
 - 의존성 있는 작업만 순차 실행
 
 ### 3. 사용 가능한 에이전트 (subagent_type)
