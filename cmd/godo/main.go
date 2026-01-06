@@ -282,6 +282,13 @@ func installFromRelease(force bool) error {
 		}
 	}
 
+	// Copy user.yaml.example to user.yaml if user.yaml doesn't exist
+	userYamlExample := ".do/config/sections/user.yaml.example"
+	userYaml := ".do/config/sections/user.yaml"
+	if fileExists(userYamlExample) && !fileExists(userYaml) {
+		copyFile(userYamlExample, userYaml)
+	}
+
 	return nil
 }
 
@@ -339,6 +346,13 @@ func installFromGit(force bool) {
 				}
 			}
 		}
+	}
+
+	// Copy user.yaml.example to user.yaml if user.yaml doesn't exist
+	userYamlExample := ".do/config/sections/user.yaml.example"
+	userYaml := ".do/config/sections/user.yaml"
+	if fileExists(userYamlExample) && !fileExists(userYaml) {
+		copyFile(userYamlExample, userYaml)
 	}
 
 	// CLAUDE.md
