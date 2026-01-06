@@ -102,6 +102,14 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 - 기능 단위로 커밋 (상세한 메시지)
 - 절대 금지: `git reset --hard`, `git push --force`
 
+### 릴리즈 워크플로우
+- [HARD] `tobrew.lock` 또는 `tobrew.*` 파일이 프로젝트에 존재하면:
+  - **사용자가 요청한 모든 기능이 완료되었을 때** 물어보기:
+    - "모든 기능 완료. 릴리즈 할까요?" (AskUserQuestion 사용)
+    - 옵션: "예, 릴리즈" / "나중에"
+  - 커밋할 때마다 릴리즈하는 것이 아님 - 큰 작업 단위로만
+  - "예, 릴리즈" 선택 시: `git add -A && git commit && git push && tobrew release --patch`
+
 ### 코드 스타일
 - 타입 힌트, 독스트링 작성
 - 프로젝트 기존 스타일 따르기
