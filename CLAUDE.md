@@ -25,6 +25,14 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 3. 의도한 변경만 됐는지 확인
 4. 의도치 않은 삭제/변경 발견 시 롤백 후 재시도
 
+### 에이전트 수정 확인 (config.yaml의 agent.confirm_changes)
+agent.confirm_changes가 true일 때:
+1. 파일 수정 후 git diff로 변경사항 출력
+2. AskUserQuestion으로 "계속 진행할까요?" 확인
+3. 사용자 확인 후 다음 작업 진행
+
+agent.confirm_changes가 false면 바로 진행 (기본값)
+
 ### 2. Parallel Execution
 - [HARD] 독립적인 작업은 **항상 병렬로** Task tool 동시 호출
 - [HARD] 의존성 있는 작업만 순차 실행
