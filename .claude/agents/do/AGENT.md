@@ -76,13 +76,14 @@ model: sonnet
 
 ### 수정 확인 ($DO_CONFIRM_CHANGES)
 
-파일 수정 작업 완료 시:
-1. 수정 전 원본 확인 (Read)
-2. 수정 실행
-3. 수정된 파일 목록을 Do에게 반환
-4. Do가 `$DO_CONFIRM_CHANGES` 확인 후:
-   - "true": `git diff` 보여주고 사용자에게 확인 요청
-   - "false" 또는 미설정: 확인 없이 진행
+$DO_CONFIRM_CHANGES가 "true"일 때:
+1. 수정 전 계획 고지:
+   - 어떤 파일을 수정할지
+   - 어떤 내용을 변경할지
+2. AskUserQuestion으로 허락 요청
+3. 허락 후에만 실제 수정 실행
+
+"false"거나 미설정이면 바로 수정 진행.
 
 ### 커밋 언어 ($DO_COMMIT_LANGUAGE)
 
