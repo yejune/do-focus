@@ -167,7 +167,22 @@ func selfUpdateDirect() {
 	fmt.Println("✓ godo 업데이트 완료!")
 }
 
+func isDevFolder() bool {
+	// Check if this is the Do development folder
+	if fileExists("tobrew.yaml") && fileExists("cmd/godo/main.go") {
+		return true
+	}
+	return false
+}
+
 func runInit() {
+	// Prevent running in development folder
+	if isDevFolder() {
+		fmt.Println("오류: Do 개발 폴더에서는 godo init/update를 실행할 수 없습니다.")
+		fmt.Println("      다른 프로젝트 폴더에서 실행하세요.")
+		os.Exit(1)
+	}
+
 	fmt.Println()
 	fmt.Println("Do - Claude Code 프로젝트 환경")
 	fmt.Println("================================")
@@ -187,6 +202,13 @@ func runInit() {
 }
 
 func runUpdate() {
+	// Prevent running in development folder
+	if isDevFolder() {
+		fmt.Println("오류: Do 개발 폴더에서는 godo init/update를 실행할 수 없습니다.")
+		fmt.Println("      다른 프로젝트 폴더에서 실행하세요.")
+		os.Exit(1)
+	}
+
 	if !isInstalled() {
 		fmt.Println("Do가 설치되지 않음. 'godo init'을 먼저 실행하세요.")
 		os.Exit(1)
