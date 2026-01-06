@@ -2,9 +2,14 @@
 .do/cache/
 .do/logs/
 
-# User-specific settings (use *.example as template)
-.do/config/sections/user.yaml
-.do/config/config.yaml
+# Session state (personal)
+.do/memory/
+
+# Context save (personal notes)
+.do/context.md
+
+# Claude Code local settings
+.claude/settings.local.json
 
 # Python
 *.pyc

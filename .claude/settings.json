@@ -1,23 +1,5 @@
 {
-  "style": "pair",
-  "language": "ko",
-  "tdd": true,
-  "testCoverage": 80,
-  "git": {
-    "autoBranch": true,
-    "commitPerFeature": true
-  },
-  "code": {
-    "explicitStyle": true,
-    "typeHints": true,
-    "docstrings": true
-  },
-  "aiFooter": "optional",
-  "commit": {
-    "detailed": true,
-    "format": "title + body",
-    "requirement": "diff와 로그만으로 의도 파악 가능해야 함"
-  },
+  "outputStyle": "pair",
   "permissions": {
     "allow": [
       "Bash(git branch:*)",
@@ -42,7 +24,10 @@
       "Task",
       "TodoWrite",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "Bash(uv:*)",
+      "Bash(cat:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": [
       "Bash(git reset --hard:*)",

@@ -97,6 +97,32 @@ Team 모드
 
 ---
 
+## 설정 기반 동작 [HARD]
+
+커밋 생성 전 `.do/config/config.yaml` 읽어서 적용:
+
+### 1. 커밋 메시지 언어 (language.commit)
+- `ko`: 커밋 메시지를 한국어로 작성
+- `en`: 커밋 메시지를 영어로 작성 (기본값)
+
+### 2. AI 푸터 (commit.ai_footer)
+- `true`: 커밋 메시지 끝에 AI 푸터 추가
+  ```
+  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  ```
+- `false`: AI 푸터 추가하지 않음 (기본값)
+
+### 설정 읽기 방법
+```bash
+# config.yaml에서 설정 확인
+cat .do/config/config.yaml
+```
+
+설정 파일이 없으면 기본값 사용 (en, false)
+
+---
+
 ## 핵심 기능 영역
 
 ### 미션 목표
