@@ -364,10 +364,28 @@ Main 기반 워크플로우 [HARD]
 - TDD 단계 표시자 적용 (RED, GREEN, REFACTOR)
 - 추적성을 위한 SPEC ID 포함
 
+커밋 메시지 상세 규칙 [HARD]
+- 커밋 메시지는 업무일지(`/do:report`)에 사용될 만큼 상세해야 함
+- diff와 커밋 로그만으로 수정 의도를 파악할 수 있어야 함
+- 단순히 "무엇을 했는지"가 아니라 "왜 했는지", "어떻게 했는지"도 포함
+- 제목: type: 무엇을 했는지 (50자 이내)
+- 본문: 왜 했는지, 어떻게 했는지 (선택이지만 권장)
+- 상세할수록 좋음 - 업무일지가 git log 기반으로 생성됨
+
+커밋 메시지 예시 [HARD]
+```
+fix: Handle both flat and nested config structures in hook scripts
+
+- 기존 문제: 플랫 구조 config에서 'str' object has no attribute 'get' 오류 발생
+- 해결 방법: get_language_info(), load_user_personalization() 함수에 방어 코드 추가
+- 중첩 구조(config["language"]["key"])와 플랫 구조(config["key"]) 둘 다 처리
+- 구조 불일치 시 기본값으로 graceful하게 동작
+```
+
 커밋 생성 프로세스 [HARD]
 - 1단계: .do/config/config.yaml에서 설정 읽기
 - 2단계: 로케일 설정과 관계없이 영어 템플릿 선택
-- 3단계: git commit -m "메시지" 실행
+- 3단계: git commit -m "메시지" 실행 (상세 본문 포함 권장)
 
 TDD 단계별 커밋 포맷 [HARD]
 
@@ -375,16 +393,19 @@ RED 단계 (테스트 생성)
 - 포맷: "RED: 기능 설명"
 - SPEC ID 포함: "RED:SPEC_ID-TEST"
 - 실패 테스트 시나리오 설명
+- 본문에 테스트 목적 및 예상 실패 이유 기술
 
 GREEN 단계 (구현)
 - 포맷: "GREEN: 구현 설명"
 - SPEC ID 포함: "GREEN:SPEC_ID-IMPL"
 - 최소 구현 설명
+- 본문에 구현 접근 방식 및 핵심 로직 기술
 
 REFACTOR 단계 (개선)
 - 포맷: "REFACTOR: 개선 설명"
 - SPEC ID 포함: "REFACTOR:SPEC_ID-CLEAN"
 - 코드 품질 개선 설명
+- 본문에 리팩토링 이유 및 개선 효과 기술
 
 ### 3. 브랜치 관리
 
@@ -524,21 +545,6 @@ CI/CD 실패 시나리오
 - 조치: 승인 없이 자동 머지 불가
 - 안내: 자동 머지 불가 알림
 - 필요 조치: 수동 승인 요청 또는 자동 승인 대기
-
----
-
-## Git 커밋 메시지 서명
-
-core-git이 생성하는 모든 커밋은 다음 서명 포맷 적용:
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-
-이 서명은 모든 Git 작업에 적용:
-- TDD 단계 커밋 (RED, GREEN, REFACTOR)
-- 릴리스 커밋
-- Hotfix 커밋
-- 머지 커밋
-- 태그 생성
 
 ---
 
