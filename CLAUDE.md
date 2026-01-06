@@ -75,6 +75,10 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 - git, 커밋, 브랜치, PR, 머지
 - commit, branch, merge, pull request
 
+### 업무일지 → `/do:report` 실행
+- 업무일지, daily report, 일일보고
+- "업무일지 작성해줘" → `/do:report` 명령 실행
+
 ---
 
 ## Parallel Execution Pattern
@@ -99,8 +103,24 @@ Core Principle: Do delegates all tasks to specialized agents and coordinates the
 
 ### Git 워크플로우
 - 작업 시작 시 새 브랜치 생성
-- 기능 단위로 커밋 (상세한 메시지)
+- 기능 단위로 커밋
 - 절대 금지: `git reset --hard`, `git push --force`
+
+### 커밋 메시지 규칙 [HARD]
+- **제목**: `type: 무엇을 했는지` (50자 이내)
+  - type: feat, fix, refactor, docs, test, chore
+- **본문**: 왜 했는지, 어떻게 했는지 (선택)
+- **상세할수록 좋음** - 업무일지(`/do:report`)가 git log 기반으로 생성됨
+- diff와 커밋 로그만으로 수정 의도를 알 수 있어야 함
+
+예시:
+```
+feat: Add user authentication with JWT
+
+- JWT 토큰 발급/검증 구현
+- 리프레시 토큰 로직 추가
+- 만료 시간 24시간 설정
+```
 
 ### 릴리즈 워크플로우
 - [HARD] `tobrew.lock` 또는 `tobrew.*` 파일이 프로젝트에 존재하면:
