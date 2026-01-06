@@ -31,6 +31,8 @@ func main() {
 		runInit()
 	case "update":
 		runUpdate()
+	case "selfupdate", "self-update":
+		runSelfUpdate()
 	case "version", "-v", "--version":
 		fmt.Printf("godo version %s\n", version)
 	case "help", "-h", "--help":
@@ -46,15 +48,123 @@ func printUsage() {
 	fmt.Println(`godo - Do CLI installer
 
 Usage:
-  godo init      Install Do in current directory
-  godo update    Update existing Do installation
-  godo version   Show version
-  godo help      Show this help
+  godo init        Install Do in current directory
+  godo update      Update existing Do installation
+  godo selfupdate  Update godo itself (brew upgrade)
+  godo version     Show version
+  godo help        Show this help
 
 Examples:
   cd my-project
-  godo init      # Install Do
-  godo update    # Update to latest version`)
+  godo init        # Install Do
+  godo update      # Update Do to latest version
+  godo selfupdate  # Update godo CLI`)
+}
+
+func runSelfUpdate() {
+	fmt.Println("godo 업데이트 중...")
+	fmt.Printf("현재 버전: %s\n", version)
+
+	// Try brew first
+	cmd := exec.Command("brew", "upgrade", "yejune/tap/godo")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		// Fallback: direct download
+		fmt.Println("brew 업그레이드 실패. 직접 다운로드 시도...")
+		selfUpdateDirect()
+		return
+	}
+
+	fmt.Println("✓ godo 업데이트 완료!")
+}
+
+func selfUpdateDirect() {
+	// Detect OS and arch
+	goos := os.Getenv("GOOS")
+	goarch := os.Getenv("GOARCH")
+
+	if goos == "" {
+		switch {
+		case strings.Contains(strings.ToLower(os.Getenv("OS")), "windows"):
+			goos = "windows"
+		default:
+			// Use uname
+			out, _ := exec.Command("uname", "-s").Output()
+			switch strings.TrimSpace(strings.ToLower(string(out))) {
+			case "darwin":
+				goos = "darwin"
+			default:
+				goos = "linux"
+			}
+		}
+	}
+
+	if goarch == "" {
+		out, _ := exec.Command("uname", "-m").Output()
+		arch := strings.TrimSpace(strings.ToLower(string(out)))
+		switch arch {
+		case "arm64", "aarch64":
+			goarch = "arm64"
+		default:
+			goarch = "amd64"
+		}
+	}
+
+	// Download URL
+	binaryName := fmt.Sprintf("godo-%s-%s", goos, goarch)
+	if goos == "windows" {
+		binaryName += ".exe"
+	}
+	url := fmt.Sprintf("https://github.com/yejune/do/releases/latest/download/%s", binaryName)
+
+	fmt.Printf("다운로드: %s\n", url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("오류: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		fmt.Printf("오류: HTTP %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
+
+	// Get current executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("오류: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write to temp file
+	tmpFile := exePath + ".new"
+	f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		fmt.Printf("오류: %v\n", err)
+		os.Exit(1)
+	}
+
+	io.Copy(f, resp.Body)
+	f.Close()
+
+	// Replace old binary
+	oldFile := exePath + ".old"
+	os.Remove(oldFile)
+	os.Rename(exePath, oldFile)
+
+	if err := os.Rename(tmpFile, exePath); err != nil {
+		// Rollback
+		os.Rename(oldFile, exePath)
+		fmt.Printf("오류: %v\n", err)
+		os.Exit(1)
+	}
+
+	os.Remove(oldFile)
+	fmt.Println("✓ godo 업데이트 완료!")
 }
 
 func runInit() {

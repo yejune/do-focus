@@ -1,0 +1,23 @@
+name: godo
+language: go
+description: CLI installer for Do - Claude Code project environment
+homepage: https://github.com/yejune/do
+license: MIT
+github:
+    user: yejune
+    repo: do
+    tap_repo: homebrew-tap
+build:
+    command: go build -ldflags "-X main.version={{.Version}}" -o build/{{.Name}} ./cmd/godo/
+formula:
+    install: |-
+        system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "godo", "./cmd/godo/"
+        bin.install "godo"
+    test: assert_match "godo version", shell_output("#{bin}/godo version")
+    caveats: |-
+        godo has been installed!
+
+        Usage:
+          cd my-project
+          godo init      # Install Do
+          godo update    # Update Do
