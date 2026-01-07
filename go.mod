@@ -1,3 +1,3 @@
-module github.com/yejune/do
+module github.com/yejune/do-focus
 
 go 1.21
