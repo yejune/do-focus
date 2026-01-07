@@ -1,6 +1,6 @@
 #!/bin/sh
 # Do - Claude Code 프로젝트 환경 설치
-# curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh
+# curl -fsSL https://raw.githubusercontent.com/yejune/do-focus/main/install.sh | sh
 
 set -e
 
@@ -21,7 +21,7 @@ trap "rm -rf $TMP" EXIT
 
 # 다운로드
 echo "다운로드 중..."
-if ! git clone --depth 1 --quiet https://github.com/yejune/do.git "$TMP/do"; then
+if ! git clone --depth 1 --quiet https://github.com/yejune/do-focus.git "$TMP/do"; then
     echo "오류: git clone 실패"
     exit 1
 fi
