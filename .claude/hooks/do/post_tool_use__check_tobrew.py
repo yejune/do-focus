@@ -22,7 +22,11 @@ from pathlib import Path
 
 
 def check_and_remove_ai_footer(project_dir: Path) -> bool:
-    """Check latest commit for AI footer and remove it via amend.
+    """Check latest commit for AI footer and remove it (conditional).
+
+    Respects DO_AI_FOOTER environment variable:
+    - "false" or unset: Remove AI footer (default)
+    - "true": Keep AI footer
 
     Args:
         project_dir: Project root directory
@@ -31,6 +35,12 @@ def check_and_remove_ai_footer(project_dir: Path) -> bool:
         True if AI footer was found and removed, False otherwise
     """
     try:
+        # Check DO_AI_FOOTER environment variable
+        do_ai_footer = os.environ.get("DO_AI_FOOTER", "false").lower()
+
+        # If DO_AI_FOOTER is "true", skip removal
+        if do_ai_footer == "true":
+            return False
         # Get latest commit message
         result = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"],
