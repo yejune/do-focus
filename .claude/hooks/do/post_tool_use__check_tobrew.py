@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-PostToolUse Hook: Check tobrew after git commit
+PostToolUse Hook: Check tobrew after git commit & Remove AI footer
 
-Detects git commit commands and prompts user to release if tobrew files exist.
+Detects git commit commands and:
+1. Checks for AI footer in commit message and removes it (3rd defense layer)
+2. Prompts user to release if tobrew files exist
 
 Event: PostToolUse
 Trigger: Successful git commit command
-Action: Check for tobrew.* files and suggest release
+Action: Clean AI footer + Check for tobrew.* files and suggest release
 
 Usage:
     Automatically triggered after git commit via PostToolUse hook
@@ -15,7 +17,72 @@ Usage:
 import os
 import sys
 import json
+import subprocess
 from pathlib import Path
+
+
+def check_and_remove_ai_footer(project_dir: Path) -> bool:
+    """Check latest commit for AI footer and remove it via amend.
+
+    Args:
+        project_dir: Project root directory
+
+    Returns:
+        True if AI footer was found and removed, False otherwise
+    """
+    try:
+        # Get latest commit message
+        result = subprocess.run(
+            ["git", "log", "-1", "--pretty=%B"],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        commit_msg = result.stdout.strip()
+
+        # Check for AI footer patterns
+        ai_footer_patterns = [
+            "Co-Authored-By: Claude Code",
+            "Co-authored-by: Claude Code",
+        ]
+
+        has_ai_footer = any(pattern in commit_msg for pattern in ai_footer_patterns)
+
+        if not has_ai_footer:
+            return False
+
+        # Remove AI footer lines
+        lines = commit_msg.split('\n')
+        cleaned_lines = [
+            line for line in lines
+            if not any(pattern in line for pattern in ai_footer_patterns)
+            and line.strip() != '---'
+        ]
+
+        # Remove trailing empty lines
+        while cleaned_lines and not cleaned_lines[-1].strip():
+            cleaned_lines.pop()
+
+        cleaned_msg = '\n'.join(cleaned_lines)
+
+        # Amend commit with cleaned message
+        subprocess.run(
+            ["git", "commit", "--amend", "-m", cleaned_msg],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        return True
+
+    except subprocess.CalledProcessError:
+        # Git command failed, ignore
+        return False
+    except Exception:
+        # Any other error, ignore
+        return False
 
 
 def find_tobrew_files(project_dir: Path) -> list[str]:
@@ -79,8 +146,17 @@ def main():
             # Not a git commit, exit silently
             sys.exit(0)
 
-        # Check for tobrew files
         project_path = Path(project_dir)
+
+        # 3rd defense layer: Check and remove AI footer
+        ai_footer_removed = check_and_remove_ai_footer(project_path)
+        if ai_footer_removed:
+            print(json.dumps({
+                "type": "systemMessage",
+                "content": "🛡️ 3차 방어선 작동: AI 푸터 자동 제거됨"
+            }, ensure_ascii=False))
+
+        # Check for tobrew files
         tobrew_files = find_tobrew_files(project_path)
 
         if not tobrew_files:
