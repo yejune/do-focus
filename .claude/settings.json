@@ -43,6 +43,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/do/session_start__inject_do_persona.py"
+          },
+          {
+            "type": "command",
             "command": "uv run $CLAUDE_PROJECT_DIR/.claude/hooks/do/session_start__show_project_info.py"
           }
         ]
