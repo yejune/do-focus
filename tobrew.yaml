@@ -1,11 +1,11 @@
 name: godo
 language: go
 description: CLI installer for Do - Claude Code project environment
-homepage: https://github.com/yejune/do
+homepage: https://github.com/yejune/do-focus
 license: MIT
 github:
     user: yejune
-    repo: do
+    repo: do-focus
     tap_repo: homebrew-tap
 build:
     command: go build -ldflags "-X main.version={{.Version}}" -o build/{{.Name}} ./cmd/godo/

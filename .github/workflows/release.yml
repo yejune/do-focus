@@ -74,13 +74,13 @@ jobs:
 
             **방법 1: curl (권장)**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/yejune/do/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/yejune/do-focus/main/install.sh | sh
             ```
 
             **방법 2: godo CLI**
             ```bash
             # macOS (Apple Silicon)
-            curl -fsSL https://github.com/yejune/do/releases/latest/download/godo-darwin-arm64 -o /usr/local/bin/godo
+            curl -fsSL https://github.com/yejune/do-focus/releases/latest/download/godo-darwin-arm64 -o /usr/local/bin/godo
             chmod +x /usr/local/bin/godo
 
             # 설치
