@@ -28,6 +28,7 @@ node_modules/
 # Logs
 *.log
 
-# Binaries
-godo
-godo-*
+# Binaries (루트만)
+/godo
+/godo-*
+/build/
