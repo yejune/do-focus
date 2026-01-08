@@ -8,7 +8,7 @@ Claude Code용 프로젝트별 AI 개발 환경
 
 1. Claude Code 설치: `brew install anthropics/tap/claude`
 2. godo 설치: `brew install yejune/tap/godo`
-3. 프로젝트에서 초기화: `godo init` 또는 `godo update`
+3. 프로젝트에서 초기화: `godo sync` (설치/업데이트 자동 감지)
 4. 초기 설정: `/do:setup`
 
 ---
@@ -45,6 +45,16 @@ Claude Code용 프로젝트별 AI 개발 환경
 - Claude Code CLI
 - Python 3.10+ (훅 실행용)
 - uv (Python 패키지 관리자)
+
+---
+
+## godo 명령어
+
+```bash
+godo sync         # 설치 또는 업데이트
+godo selfupdate   # godo CLI 자체 업데이트
+godo version      # 버전 확인
+```
 
 ---
 
