@@ -602,16 +602,13 @@ func printSourceInstructions() {
 		return
 	}
 
-	var rcFile, rcPath string
+	var rcPath string
 
 	if strings.Contains(shell, "zsh") {
-		rcFile = "~/.zshrc"
 		rcPath = filepath.Join(home, ".zshrc")
 	} else if strings.Contains(shell, "bash") {
-		rcFile = "~/.bashrc"
 		rcPath = filepath.Join(home, ".bashrc")
 	} else {
-		rcFile = "~/.bashrc or ~/.zshrc"
 		rcPath = filepath.Join(home, ".bashrc")
 	}
 
