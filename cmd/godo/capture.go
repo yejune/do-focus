@@ -176,23 +176,42 @@ func limitLines(content string, lines int) string {
 	return strings.Join(allLines[start:], "\n")
 }
 
-// findLatestSessionLog finds the most recent claude-session-*.log file in ~/.do/
+// findLatestSessionLog finds the most recent *.session file in .do/claude-session/ (project directory)
 func findLatestSessionLog() (string, error) {
-	homeDir, err := os.UserHomeDir()
+	// Find Git root or use current directory
+	gitRoot, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	var sessionBaseDir string
 	if err != nil {
-		return "", fmt.Errorf("홈 디렉토리 찾기 실패: %v", err)
+		// Not in a git repo, use current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("현재 디렉토리 확인 실패: %v", err)
+		}
+		sessionBaseDir = cwd
+	} else {
+		sessionBaseDir = strings.TrimSpace(string(gitRoot))
 	}
 
-	doDir := filepath.Join(homeDir, ".do")
-	pattern := filepath.Join(doDir, "claude-session-*.log")
+	sessionDir := filepath.Join(sessionBaseDir, ".do", "claude-session")
 
-	matches, err := filepath.Glob(pattern)
+	// Collect all .session files recursively
+	var matches []string
+	err = filepath.Walk(sessionDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip directories that can't be read
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".session" {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+
 	if err != nil {
 		return "", fmt.Errorf("세션 로그 검색 실패: %v", err)
 	}
 
 	if len(matches) == 0 {
-		return "", fmt.Errorf("세션 로그를 찾을 수 없습니다 (경로: %s)", pattern)
+		return "", fmt.Errorf("세션 로그를 찾을 수 없습니다 (경로: %s)", sessionDir)
 	}
 
 	// Sort by modification time (most recent first)
