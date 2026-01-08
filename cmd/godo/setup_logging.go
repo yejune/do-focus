@@ -39,9 +39,17 @@ func runSetupLogging() {
 if command -v claude &> /dev/null; then
     claude_original="$(which claude)"
     claude() {
-        mkdir -p ~/.do
-        export CLAUDE_SESSION_ID=$(date +%Y%m%d_%H%M%S)
-        local log_file=~/.do/claude-session-${CLAUDE_SESSION_ID}.log
+        # Find Git root or use current directory
+        local git_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+
+        # Create hierarchical directory structure: <project>/.do/claude-session/YYYY/MM/DD/
+        local session_date=$(date +%Y/%m/%d)
+        local session_dir="${git_root}/.do/claude-session/${session_date}"
+        mkdir -p "$session_dir"
+
+        # Session ID format: YYYYMMDD-HHmmss (dash instead of underscore)
+        export CLAUDE_SESSION_ID=$(date +%Y%m%d-%H%M%S)
+        local log_file=${session_dir}/${CLAUDE_SESSION_ID}.session
 
         # Show session ID to user (stderr - not sent to Claude)
         echo "🔗 Session: $CLAUDE_SESSION_ID" >&2
@@ -94,5 +102,5 @@ fi
 	fmt.Println("다음 명령 실행:")
 	fmt.Printf("  source %s\n", rcFile)
 	fmt.Println()
-	fmt.Println("이제 claude 실행 시 자동으로 ~/.do/claude-session.log에 기록됩니다")
+	fmt.Println("이제 claude 실행 시 프로젝트 디렉토리의 .do/claude-session/YYYY/MM/DD/에 기록됩니다")
 }
