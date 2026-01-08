@@ -255,7 +255,10 @@ func runSync() {
 			printSourceInstructions()
 
 		case "ok":
-			// Already correct, do nothing
+			// File is correct, but check if loaded in current shell
+			fmt.Println()
+			fmt.Println("💡 Claude 로깅이 설정되어 있습니다")
+			printSourceInstructions()
 		}
 
 		fmt.Println("💡 Claude Code를 시작하세요")
