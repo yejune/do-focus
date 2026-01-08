@@ -33,8 +33,6 @@ func main() {
 		runSelfUpdate()
 	case "capture":
 		runCapture()
-	case "setup-logging":
-		runSetupLogging()
 	case "version", "-v", "--version":
 		fmt.Printf("godo version %s\n", version)
 	case "help", "-h", "--help":
@@ -53,7 +51,6 @@ Usage:
   godo sync           Install or update Do
   godo selfupdate     Update godo itself
   godo capture        Capture terminal buffer to file
-  godo setup-logging  Setup Claude session logging
   godo version        Show version
   godo help           Show this help
 
@@ -61,8 +58,7 @@ Examples:
   cd my-project
   godo sync                              # Install or update Do
   godo selfupdate                        # Update godo CLI
-  godo capture --output terminal.txt     # Capture terminal buffer
-  godo setup-logging                     # Setup Claude logging to ~/.do/claude-session.log`)
+  godo capture --output terminal.txt     # Capture terminal buffer`)
 }
 
 func runSelfUpdate() {
@@ -236,31 +232,6 @@ func runSync() {
 		install(true)
 		fmt.Println()
 		fmt.Println("✓ Do 업데이트 완료!")
-
-		// Auto-setup logging alias
-		aliasStatus := checkAliasStatus()
-
-		switch aliasStatus {
-		case "none":
-			fmt.Println()
-			fmt.Println("⚙️  Claude 로깅 설정 중...")
-			runSetupLogging()
-			printSourceInstructions()
-
-		case "outdated":
-			fmt.Println()
-			fmt.Println("⚙️  Claude 로깅 설정 업데이트 중...")
-			updateAliasInRcFile()
-			fmt.Println("✓ Claude 로깅 설정 업데이트 완료!")
-			printSourceInstructions()
-
-		case "ok":
-			// File is correct, but check if loaded in current shell
-			fmt.Println()
-			fmt.Println("💡 Claude 로깅이 설정되어 있습니다")
-			printSourceInstructions()
-		}
-
 		fmt.Println("💡 Claude Code를 시작하세요")
 	} else {
 		// New installation - run init
@@ -493,199 +464,3 @@ func copyDir(src, dst string) error {
 	})
 }
 
-func checkAliasInstalled() bool {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-
-	shell := os.Getenv("SHELL")
-	var rcFile string
-
-	if strings.Contains(shell, "zsh") {
-		rcFile = filepath.Join(home, ".zshrc")
-	} else if strings.Contains(shell, "bash") {
-		rcFile = filepath.Join(home, ".bashrc")
-	} else {
-		return false
-	}
-
-	content, err := os.ReadFile(rcFile)
-	if err != nil {
-		return false
-	}
-
-	// Check for "Do - Claude logging" comment
-	return strings.Contains(string(content), "Do - Claude logging")
-}
-
-// checkAliasStatus returns "none", "outdated", or "ok"
-func checkAliasStatus() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "none"
-	}
-
-	shell := os.Getenv("SHELL")
-	var rcFile string
-
-	if strings.Contains(shell, "zsh") {
-		rcFile = filepath.Join(home, ".zshrc")
-	} else if strings.Contains(shell, "bash") {
-		rcFile = filepath.Join(home, ".bashrc")
-	} else {
-		return "none"
-	}
-
-	content, err := os.ReadFile(rcFile)
-	if err != nil {
-		return "none"
-	}
-
-	contentStr := string(content)
-
-	// Not installed
-	if !strings.Contains(contentStr, "Do - Claude logging") {
-		return "none"
-	}
-
-	// Check if using old pipe version (broken stdin)
-	if strings.Contains(contentStr, `| tee -a "$log_file"`) {
-		return "outdated"
-	}
-
-	// Check if using new process substitution (correct)
-	if strings.Contains(contentStr, `> >(tee -a "$log_file")`) {
-		return "ok"
-	}
-
-	// Unknown version - assume outdated to be safe
-	return "outdated"
-}
-
-func getExpectedAliasContent() string {
-	return `# Do - Claude logging (added by godo)
-if command -v claude &> /dev/null; then
-    claude_original="$(which claude)"
-    claude() {
-        # Find Git root or use current directory
-        local git_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
-
-        # Create hierarchical directory structure: <project>/.do/claude-session/YYYY/MM/DD/
-        local session_date=$(date +%Y/%m/%d)
-        local session_dir="${git_root}/.do/claude-session/${session_date}"
-        mkdir -p "$session_dir"
-
-        # Session ID format: YYYYMMDD-HHmmss (dash instead of underscore)
-        export CLAUDE_SESSION_ID=$(date +%Y%m%d-%H%M%S)
-        local log_file=${session_dir}/${CLAUDE_SESSION_ID}.session
-
-        # Show session ID to user (stderr - not sent to Claude)
-        echo "🔗 Session: $CLAUDE_SESSION_ID" >&2
-
-        # Log detailed info to file only
-        echo "🎬 Claude session started at $(date)" >> "$log_file"
-
-        # Run Claude with logging (use process substitution to preserve stdin)
-        "$claude_original" "$@" > >(tee -a "$log_file") 2>&1
-        local exit_code=$?
-
-        # Log end to file only
-        echo "🏁 Claude session ended at $(date) (exit code: $exit_code)" >> "$log_file"
-        return $exit_code
-    }
-fi`
-}
-
-func printSourceInstructions() {
-	// If already in a Claude session, don't show instructions
-	if os.Getenv("CLAUDE_SESSION_ID") != "" {
-		return
-	}
-
-	shell := os.Getenv("SHELL")
-	var rcPath string
-
-	if strings.Contains(shell, "zsh") {
-		rcPath = "~/.zshrc"
-	} else if strings.Contains(shell, "bash") {
-		rcPath = "~/.bashrc"
-	} else {
-		rcPath = "~/.bashrc"
-	}
-
-	fmt.Println()
-	fmt.Println("📌 Claude 로깅을 사용하려면:")
-	fmt.Println()
-	fmt.Println("   1. 새 터미널 창을 여세요 (권장)")
-	fmt.Println()
-	fmt.Println("   2. 또는 현재 shell에 적용:")
-	fmt.Printf("      source %s\n", rcPath)
-	fmt.Println()
-}
-
-func updateAliasInRcFile() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	shell := os.Getenv("SHELL")
-	var rcFile string
-
-	if strings.Contains(shell, "zsh") {
-		rcFile = filepath.Join(home, ".zshrc")
-	} else if strings.Contains(shell, "bash") {
-		rcFile = filepath.Join(home, ".bashrc")
-	} else {
-		fmt.Println("지원하지 않는 shell:", shell)
-		os.Exit(1)
-	}
-
-	content, err := os.ReadFile(rcFile)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Remove old alias section
-	lines := strings.Split(string(content), "\n")
-	var newLines []string
-	skipMode := false
-
-	for _, line := range lines {
-		if strings.Contains(line, "# Do - Claude logging") {
-			skipMode = true
-			continue
-		}
-		if skipMode && strings.TrimSpace(line) == "fi" {
-			skipMode = false
-			continue
-		}
-		if !skipMode {
-			newLines = append(newLines, line)
-		}
-	}
-
-	// Write new content
-	newContent := strings.Join(newLines, "\n")
-	if err := os.WriteFile(rcFile, []byte(newContent), 0644); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Append new alias
-	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	aliasContent := "\n" + getExpectedAliasContent() + "\n"
-	if _, err := f.WriteString(aliasContent); err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-}
