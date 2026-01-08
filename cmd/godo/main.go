@@ -33,6 +33,8 @@ func main() {
 		runSelfUpdate()
 	case "capture":
 		runCapture()
+	case "claude":
+		runClaude()
 	case "version", "-v", "--version":
 		fmt.Printf("godo version %s\n", version)
 	case "help", "-h", "--help":
@@ -51,6 +53,7 @@ Usage:
   godo sync           Install or update Do
   godo selfupdate     Update godo itself
   godo capture        Capture terminal buffer to file
+  godo claude [args]  Run Claude with session logging
   godo version        Show version
   godo help           Show this help
 
@@ -58,7 +61,10 @@ Examples:
   cd my-project
   godo sync                              # Install or update Do
   godo selfupdate                        # Update godo CLI
-  godo capture --output terminal.txt     # Capture terminal buffer`)
+  godo capture --output terminal.txt     # Capture terminal buffer
+  godo claude                            # Interactive mode with logging
+  godo claude --continue                 # Continue mode with logging
+  godo claude "hello"                    # Direct prompt with logging`)
 }
 
 func runSelfUpdate() {
