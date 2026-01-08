@@ -103,6 +103,9 @@ mkdir -p .do/plans/{YYYY}/{MM}
 ```
 플랜 생성 완료: .do/plans/{YYYY}/{MM}/{DD}.{제목}.md
 
+자동 보관:
+- 세션 종료 시 자동으로 `.do/plan/{YYYY}/{MM}/{DD}/{YYYYMMDD-HHmmss-제목}.plan`에 보관됩니다
+
 다음 단계:
 - 플랜 검토 후 수정 필요시 알려주세요
 - 구현 시작: "플랜대로 구현해줘"

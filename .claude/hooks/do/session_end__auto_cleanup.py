@@ -509,6 +509,70 @@ def extract_specs_from_memory() -> List[str]:
     return specs
 
 
+def find_recent_plan_files() -> List[Path]:
+    """Find plan files created in the last hour
+
+    Returns:
+        List of plan file paths
+    """
+    plan_files = []
+
+    try:
+        # Check .do/plans/ directory
+        plans_dir = Path(".do/plans")
+        if plans_dir.exists():
+            cutoff_time = time.time() - 3600  # 1 hour ago
+
+            # Find all .md files modified in the last hour
+            for plan_file in plans_dir.rglob("*.md"):
+                if plan_file.stat().st_mtime > cutoff_time:
+                    plan_files.append(plan_file)
+
+    except Exception as e:
+        logger.warning(f"Failed to find recent plan files: {e}")
+
+    return plan_files
+
+
+def save_plan_to_archive(plan_file: Path) -> Optional[Path]:
+    """Save plan file to archive with timestamp
+
+    Args:
+        plan_file: Path to the plan file
+
+    Returns:
+        Path to archived file or None on failure
+    """
+    try:
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d-%H%M%S")
+        year = now.strftime("%Y")
+        month = now.strftime("%m")
+        day = now.strftime("%d")
+
+        # Extract title from filename or first heading
+        title = plan_file.stem
+        if title.startswith(f"{day}."):
+            title = title[len(f"{day}."):]
+
+        # Create archive directory structure
+        archive_dir = Path(".do/plan") / year / month / day
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Archive filename: YYYYMMDD-HHmmss-{title}.plan
+        archive_path = archive_dir / f"{timestamp}-{title}.plan"
+
+        # Copy file
+        shutil.copy2(plan_file, archive_path)
+
+        logger.info(f"Plan archived: {archive_path}")
+        return archive_path
+
+    except Exception as e:
+        logger.error(f"Failed to archive plan {plan_file}: {e}")
+        return None
+
+
 # Note: is_root_whitelisted, get_file_pattern_category, and suggest_do_location
 # are now imported from lib.common (consolidated from duplicate implementations)
 
@@ -593,7 +657,10 @@ def generate_migration_report(violations: List[Dict[str, str]]) -> str:
 
 
 def generate_session_summary(
-    cleanup_stats: Dict[str, int], work_state: Dict[str, Any], violations_count: int = 0
+    cleanup_stats: Dict[str, int],
+    work_state: Dict[str, Any],
+    violations_count: int = 0,
+    plans_archived: int = 0,
 ) -> str:
     """Generate session summary (P1-3)
 
@@ -601,6 +668,7 @@ def generate_session_summary(
         cleanup_stats: Cleanup statistics
         work_state: Work state
         violations_count: Number of document management violations
+        plans_archived: Number of plan files archived
 
     Returns:
         Summary message
@@ -617,6 +685,10 @@ def generate_session_summary(
         files_modified = work_state.get("uncommitted_files", 0)
         if files_modified > 0:
             summary_lines.append(f"   • Files modified: {files_modified}")
+
+        # Plan files archived
+        if plans_archived > 0:
+            summary_lines.append(f"   📋 Plans archived: {plans_archived}")
 
         # Cleanup information
         total_cleaned = cleanup_stats.get("total_cleaned", 0)
@@ -686,6 +758,20 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
         cleanup_stats = cleanup_old_files(config)
         results["cleanup_stats"] = cleanup_stats
 
+        # P1-1.5: Archive recent plan files
+        archived_plans = []
+        plans_to_archive = find_recent_plan_files()
+        for plan_file in plans_to_archive:
+            archive_path = save_plan_to_archive(plan_file)
+            if archive_path:
+                archived_plans.append(str(archive_path))
+
+        if archived_plans:
+            results["plans_archived"] = {
+                "count": len(archived_plans),
+                "paths": archived_plans,
+            }
+
         # P1-2: Document Management - Scan root violations
         violations = []
         migration_report = ""
@@ -700,7 +786,9 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
                 }
 
         # P1-3: Generate session summary
-        session_summary = generate_session_summary(cleanup_stats, work_state, len(violations))
+        session_summary = generate_session_summary(
+            cleanup_stats, work_state, len(violations), len(archived_plans)
+        )
         results["session_summary"] = session_summary
 
         # Add migration report to summary if violations exist
