@@ -598,34 +598,29 @@ fi`
 }
 
 func printSourceInstructions() {
-	shell := os.Getenv("SHELL")
-	home, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Println("Warning: could not get home directory")
+	// If already in a Claude session, don't show instructions
+	if os.Getenv("CLAUDE_SESSION_ID") != "" {
 		return
 	}
 
+	shell := os.Getenv("SHELL")
 	var rcPath string
 
 	if strings.Contains(shell, "zsh") {
-		rcPath = filepath.Join(home, ".zshrc")
+		rcPath = "~/.zshrc"
 	} else if strings.Contains(shell, "bash") {
-		rcPath = filepath.Join(home, ".bashrc")
+		rcPath = "~/.bashrc"
 	} else {
-		rcPath = filepath.Join(home, ".bashrc")
+		rcPath = "~/.bashrc"
 	}
 
 	fmt.Println()
-	fmt.Println("📌 다음 명령을 복사해서 실행하세요 (현재 shell에 즉시 적용):")
+	fmt.Println("📌 Claude 로깅을 사용하려면:")
 	fmt.Println()
-
-	// Print exact eval command that user can copy-paste
-	fmt.Printf("   eval \"$(sed -n '/# Do - Claude logging/,/^fi$/p' %s)\"\n", rcPath)
-
+	fmt.Println("   1. 새 터미널 창을 여세요 (권장)")
 	fmt.Println()
-	fmt.Println("또는 새 터미널 창을 여세요")
-	fmt.Println()
-	fmt.Println("💡 Tip: 위 eval 명령은 claude 함수를 현재 shell에 즉시 로드합니다")
+	fmt.Println("   2. 또는 현재 shell에 적용:")
+	fmt.Printf("      source %s\n", rcPath)
 	fmt.Println()
 }
 
