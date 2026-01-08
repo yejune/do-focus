@@ -40,11 +40,21 @@ if command -v claude &> /dev/null; then
     claude_original="$(which claude)"
     claude() {
         mkdir -p ~/.do
-        local log_file=~/.do/claude-session-$(date +%Y%m%d_%H%M%S).log
-        echo "🎬 Claude session started at $(date)" | tee -a "$log_file"
+        export CLAUDE_SESSION_ID=$(date +%Y%m%d_%H%M%S)
+        local log_file=~/.do/claude-session-${CLAUDE_SESSION_ID}.log
+
+        # Show session ID to user (stderr - not sent to Claude)
+        echo "🔗 Session: $CLAUDE_SESSION_ID" >&2
+
+        # Log detailed info to file only
+        echo "🎬 Claude session started at $(date)" >> "$log_file"
+
+        # Run Claude with logging
         "$claude_original" "$@" 2>&1 | tee -a "$log_file"
         local exit_code=${PIPESTATUS[0]}
-        echo "🏁 Claude session ended at $(date) (exit code: $exit_code)" | tee -a "$log_file"
+
+        # Log end to file only
+        echo "🏁 Claude session ended at $(date) (exit code: $exit_code)" >> "$log_file"
         return $exit_code
     }
 fi
