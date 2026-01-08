@@ -27,10 +27,8 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "init":
-		runInit()
-	case "update":
-		runUpdate()
+	case "sync":
+		runSync()
 	case "selfupdate", "self-update":
 		runSelfUpdate()
 	case "version", "-v", "--version":
@@ -48,16 +46,14 @@ func printUsage() {
 	fmt.Println(`godo - Do CLI installer
 
 Usage:
-  godo init        Install Do in current directory
-  godo update      Update existing Do installation
-  godo selfupdate  Update godo itself (brew upgrade)
+  godo sync        Install or update Do
+  godo selfupdate  Update godo itself
   godo version     Show version
   godo help        Show this help
 
 Examples:
   cd my-project
-  godo init        # Install Do
-  godo update      # Update Do to latest version
+  godo sync        # Install or update Do
   godo selfupdate  # Update godo CLI`)
 }
 
@@ -216,6 +212,31 @@ func runUpdate() {
 
 	fmt.Println("업데이트 중...")
 	install(true)
+}
+
+func runSync() {
+	// Prevent running in development folder
+	if isDevFolder() {
+		fmt.Println("오류: Do 개발 폴더에서는 godo init/update/sync를 실행할 수 없습니다.")
+		fmt.Println("      다른 프로젝트 폴더에서 실행하세요.")
+		os.Exit(1)
+	}
+
+	if isInstalled() {
+		// Already installed - run update
+		fmt.Println("업데이트 중...")
+		install(true)
+		fmt.Println()
+		fmt.Println("✓ Do 업데이트 완료!")
+		fmt.Println("⚠️  Claude Code를 재시작하세요")
+	} else {
+		// New installation - run init
+		fmt.Println()
+		fmt.Println("Do - Claude Code 프로젝트 환경")
+		fmt.Println("================================")
+		fmt.Println()
+		install(false)
+	}
 }
 
 func isInstalled() bool {
