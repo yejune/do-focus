@@ -546,13 +546,18 @@ func checkAliasStatus() string {
 		return "none"
 	}
 
-	// Check if outdated (compare with expected alias content)
-	expectedAlias := getExpectedAliasContent()
-	if !strings.Contains(contentStr, expectedAlias) {
+	// Check if using old pipe version (broken stdin)
+	if strings.Contains(contentStr, `| tee -a "$log_file"`) {
 		return "outdated"
 	}
 
-	return "ok"
+	// Check if using new process substitution (correct)
+	if strings.Contains(contentStr, `> >(tee -a "$log_file")`) {
+		return "ok"
+	}
+
+	// Unknown version - assume outdated to be safe
+	return "outdated"
 }
 
 func getExpectedAliasContent() string {
