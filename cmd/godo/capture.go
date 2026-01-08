@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -135,36 +138,27 @@ func inTmuxSession() bool {
 	return false
 }
 
+type CaptureFallbackError struct {
+	originalErr error
+}
+
+func (e *CaptureFallbackError) Error() string {
+	return e.originalErr.Error()
+}
+
 func captureIDE(lines int) (string, error) {
 	// 1. Check if tmux is available
 	if !isTmuxAvailable() {
-		return "", fmt.Errorf(`IDE 터미널은 tmux 필요. 설치: brew install tmux
-
-해결책:
-1. tmux 설치 후 다시 시도
-   brew install tmux
-
-2. tmux 실행 후 claude 시작:
-   tmux
-   claude
-
-3. 또는 ~/.do/claude-session.log 확인
-   (claude 실행 시 자동 로깅)`)
+		return "", &CaptureFallbackError{
+			originalErr: fmt.Errorf("IDE 터미널은 tmux 필요. 설치: brew install tmux"),
+		}
 	}
 
 	// 2. Check if currently in tmux session
 	if !inTmuxSession() {
-		return "", fmt.Errorf(`IDE 터미널에서는 tmux 필요합니다.
-
-해결책:
-1. tmux 실행 후 claude 시작:
-   tmux
-   claude
-
-2. 또는 ~/.do/claude-session.log 확인
-   (claude 실행 시 자동 로깅)
-
-현재 상태: tmux 세션이 감지되지 않습니다.`)
+		return "", &CaptureFallbackError{
+			originalErr: fmt.Errorf("IDE 터미널에서는 tmux 세션 필요"),
+		}
 	}
 
 	// 3. Capture from tmux session
@@ -180,6 +174,75 @@ func limitLines(content string, lines int) string {
 	// Return last N lines
 	start := len(allLines) - lines
 	return strings.Join(allLines[start:], "\n")
+}
+
+// findLatestSessionLog finds the most recent claude-session-*.log file in ~/.do/
+func findLatestSessionLog() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("홈 디렉토리 찾기 실패: %v", err)
+	}
+
+	doDir := filepath.Join(homeDir, ".do")
+	pattern := filepath.Join(doDir, "claude-session-*.log")
+
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("세션 로그 검색 실패: %v", err)
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("세션 로그를 찾을 수 없습니다 (경로: %s)", pattern)
+	}
+
+	// Sort by modification time (most recent first)
+	sort.Slice(matches, func(i, j int) bool {
+		infoI, errI := os.Stat(matches[i])
+		infoJ, errJ := os.Stat(matches[j])
+		if errI != nil || errJ != nil {
+			return false
+		}
+		return infoI.ModTime().After(infoJ.ModTime())
+	})
+
+	return matches[0], nil
+}
+
+// copySessionLogFallback copies the latest session log to the output path
+func copySessionLogFallback(outputPath string) error {
+	latestLog, err := findLatestSessionLog()
+	if err != nil {
+		return err
+	}
+
+	// Open source file
+	srcFile, err := os.Open(latestLog)
+	if err != nil {
+		return fmt.Errorf("세션 로그 열기 실패: %v", err)
+	}
+	defer srcFile.Close()
+
+	// Create destination directory if needed
+	if dir := filepath.Dir(outputPath); dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("디렉토리 생성 실패: %v", err)
+		}
+	}
+
+	// Create destination file
+	dstFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("출력 파일 생성 실패: %v", err)
+	}
+	defer dstFile.Close()
+
+	// Copy contents
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("파일 복사 실패: %v", err)
+	}
+
+	return nil
 }
 
 func runCapture() {
@@ -255,6 +318,43 @@ func runCapture() {
 	}
 
 	if err != nil {
+		// Check if this is a fallback-eligible error
+		var fallbackErr *CaptureFallbackError
+		isFallbackError := false
+		if termType == VSCode || termType == Cursor || termType == Antigravity {
+			// For IDE terminals, any error is fallback-eligible
+			isFallbackError = true
+		} else {
+			// For other terminals, check if it's explicitly a CaptureFallbackError
+			var e *CaptureFallbackError
+			isFallbackError = err != nil && strings.Contains(err.Error(), "tmux")
+			fallbackErr = e
+			_ = fallbackErr // avoid unused variable warning
+		}
+
+		if isFallbackError {
+			fmt.Printf("⚠ 터미널 캡처 실패: %v\n", err)
+			fmt.Println("→ Fallback: Claude 세션 로그 복사 시도 중...")
+
+			if fallbackErr := copySessionLogFallback(outputPath); fallbackErr != nil {
+				fmt.Printf("Error: Fallback도 실패: %v\n", fallbackErr)
+				os.Exit(1)
+			}
+
+			// Get file info for line count
+			data, err := os.ReadFile(outputPath)
+			if err != nil {
+				fmt.Printf("Error: 파일 읽기 실패: %v\n", err)
+				os.Exit(1)
+			}
+
+			lineCount := len(strings.Split(strings.TrimSpace(string(data)), "\n"))
+			fmt.Printf("✓ Claude 세션 로그 복사 완료: %s (%d줄)\n", outputPath, lineCount)
+			fmt.Println("  (터미널 캡처 실패 시 자동 fallback)")
+			return
+		}
+
+		// Not a fallback-eligible error, exit with error
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
