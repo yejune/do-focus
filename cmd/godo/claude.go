@@ -50,6 +50,10 @@ func runClaude() {
 	args := os.Args[2:] // skip "godo" and "claude"
 	cmd := exec.Command(claudePath, args...)
 
+	// Set environment variables including session ID
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("CLAUDE_SESSION_ID=%s", sessionID))
+
 	// Connect stdin directly
 	cmd.Stdin = os.Stdin
 
@@ -82,8 +86,16 @@ func runClaudeNoLog() {
 		os.Exit(1)
 	}
 
+	// Create session ID even when no logging
+	sessionID := time.Now().Format("20060102-150405")
+
 	args := os.Args[2:]
 	cmd := exec.Command(claudePath, args...)
+
+	// Set environment variables including session ID
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("CLAUDE_SESSION_ID=%s", sessionID))
+
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
