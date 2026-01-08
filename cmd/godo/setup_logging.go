@@ -36,7 +36,7 @@ func runSetupLogging() {
 	// 3. alias 설정
 	aliasLine := "\n" + getExpectedAliasContent() + "\n"
 
-	// 4. 이미 설정되어 있는지 확인
+	// 4. 기존 내용 읽기
 	content, err := os.ReadFile(rcFile)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -47,12 +47,35 @@ func runSetupLogging() {
 		content = []byte("")
 	}
 
+	// 5. 기존 alias 제거 (있으면)
 	if strings.Contains(string(content), "Do - Claude logging") {
-		fmt.Println("✓ 이미 설정되어 있습니다")
-		return
+		lines := strings.Split(string(content), "\n")
+		newLines := []string{}
+		skipUntilFi := false
+
+		for _, line := range lines {
+			if strings.Contains(line, "# Do - Claude logging") {
+				skipUntilFi = true
+				continue
+			}
+			if skipUntilFi {
+				if strings.TrimSpace(line) == "fi" {
+					skipUntilFi = false
+				}
+				continue
+			}
+			newLines = append(newLines, line)
+		}
+
+		content = []byte(strings.Join(newLines, "\n"))
+		err := os.WriteFile(rcFile, content, 0644)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	// 5. rc 파일에 추가
+	// 6. rc 파일에 새 alias 추가
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
