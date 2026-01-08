@@ -578,9 +578,9 @@ if command -v claude &> /dev/null; then
         # Log detailed info to file only
         echo "🎬 Claude session started at $(date)" >> "$log_file"
 
-        # Run Claude with logging
-        "$claude_original" "$@" 2>&1 | tee -a "$log_file"
-        local exit_code=${PIPESTATUS[0]}
+        # Run Claude with logging (use process substitution to preserve stdin)
+        "$claude_original" "$@" > >(tee -a "$log_file") 2>&1
+        local exit_code=$?
 
         # Log end to file only
         echo "🏁 Claude session ended at $(date) (exit code: $exit_code)" >> "$log_file"
