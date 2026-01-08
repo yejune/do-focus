@@ -16,8 +16,8 @@ import (
 var version = "dev" // 빌드 시 -ldflags로 주입
 
 const (
-	repoURL    = "https://github.com/yejune/do.git"
-	releaseURL = "https://github.com/yejune/do/releases/latest/download/do-release.tar.gz"
+	repoURL    = "https://github.com/yejune/do-focus.git"
+	releaseURL = "https://github.com/yejune/do-focus/releases/latest/download/do-release.tar.gz"
 )
 
 func main() {
@@ -232,7 +232,7 @@ func runSync() {
 		install(true)
 		fmt.Println()
 		fmt.Println("✓ Do 업데이트 완료!")
-		fmt.Println("⚠️  Claude Code를 재시작하세요")
+		fmt.Println("💡 Claude Code를 시작하세요")
 	} else {
 		// New installation - run init
 		fmt.Println()
