@@ -5,6 +5,9 @@
 # Session state (personal)
 .do/memory/
 
+# Claude session logs
+.do/claude-session/
+
 # Context save (personal notes)
 .do/context.md
 
