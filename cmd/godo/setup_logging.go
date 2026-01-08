@@ -90,8 +90,5 @@ func runSetupLogging() {
 
 	fmt.Printf("✓ Claude 로깅 설정 완료: %s\n", rcFile)
 	fmt.Println()
-	fmt.Println("다음 명령 실행:")
-	fmt.Printf("  source %s\n", rcFile)
-	fmt.Println()
 	fmt.Println("이제 claude 실행 시 프로젝트 디렉토리의 .do/claude-session/YYYY/MM/DD/에 기록됩니다")
 }
