@@ -13,7 +13,7 @@ DIR=".do/captures/$YEAR/$MONTH"
 mkdir -p "$DIR"
 OUTPUT="$DIR/${TIMESTAMP}.capture"
 
-godo capture --output "$OUTPUT" --lines 500
+godo capture --output "$OUTPUT"
 
 if [ $? -eq 0 ]; then
     echo "✓ 터미널 캡처 완료: $OUTPUT"
