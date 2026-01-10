@@ -14,6 +14,7 @@ tags:
 updated: 2025-01-06
 status: active
 author: Do Team
+user-invocable: false
 ---
 
 # Database Domain Specialist

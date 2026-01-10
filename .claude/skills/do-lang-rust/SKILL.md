@@ -4,6 +4,7 @@ description: Rust 1.92+ 개발 전문가. Axum, Tokio, SQLx 및 메모리 안전
 version: 1.1.0
 updated: 2026-01-06
 status: active
+user-invocable: false
 ---
 
 ## 빠른 참조

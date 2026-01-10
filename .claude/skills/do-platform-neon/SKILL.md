@@ -7,6 +7,7 @@ tags: [neon, postgresql, serverless, branching, auto-scaling]
 context7-libraries: [/neondatabase/neon]
 related-skills: [do-platform-supabase, do-lang-typescript]
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # do-platform-neon: Neon Serverless PostgreSQL 전문가

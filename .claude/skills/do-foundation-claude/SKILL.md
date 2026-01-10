@@ -18,6 +18,7 @@ tags:
   - settings
   - iam
   - best-practices
+user-invocable: true
 ---
 
 # Claude Code 작성 키트

@@ -7,6 +7,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob
 aliases:
   - do-library-nextra
 category: library
+user-invocable: false
 ---
 
 ## 역할

@@ -6,6 +6,7 @@ category: workflow
 allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 updated: 2025-01-06
 status: active
+user-invocable: false
 ---
 
 # 문서 생성 패턴

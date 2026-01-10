@@ -4,6 +4,7 @@ description: 사용자 의도와 프로젝트 컨텍스트를 기반으로 관�
 version: 3.0.0
 category: workflow
 allowed-tools: Read, Grep, Glob, WebFetch, WebSearch
+user-invocable: true
 ---
 
 ## 빠른 참조

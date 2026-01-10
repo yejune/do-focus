@@ -20,6 +20,7 @@ allowed-tools:
   - Bash
   - mcp__context7__resolve-library-id
   - mcp__context7__query-docs
+user-invocable: false
 ---
 
 ## 빠른 참조

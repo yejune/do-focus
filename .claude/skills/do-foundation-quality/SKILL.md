@@ -16,6 +16,7 @@ tags:
   - trust-5
   - best-practices
   - code-review
+user-invocable: false
 ---
 
 # 엔터프라이즈 코드 품질 오케스트레이터

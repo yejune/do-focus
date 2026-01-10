@@ -9,6 +9,7 @@ related-skills: [do-platform-vercel, do-domain-backend]
 updated: 2025-12-30
 status: active
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # do-platform-railway: 컨테이너 배포 전문가

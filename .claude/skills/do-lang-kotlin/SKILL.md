@@ -15,6 +15,7 @@ allowed-tools:
   - Bash
   - Edit
   - Write
+user-invocable: false
 ---
 
 ## 빠른 참조

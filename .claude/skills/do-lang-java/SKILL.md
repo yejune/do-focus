@@ -8,6 +8,7 @@ context7-libraries: [/spring-projects/spring-boot, /spring-projects/spring-frame
 related-skills: [do-lang-kotlin, do-domain-backend]
 updated: 2025-12-07
 status: active
+user-invocable: false
 ---
 
 ## 빠른 참조

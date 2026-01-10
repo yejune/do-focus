@@ -17,6 +17,7 @@ related-skills:
 updated: 2025-12-23
 status: active
 author: Do Team
+user-invocable: false
 ---
 
 # Nano-Banana AI 서비스 통합

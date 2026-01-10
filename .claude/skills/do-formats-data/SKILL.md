@@ -13,6 +13,7 @@ tags:
 updated: 2026-01-06
 status: stable
 author: Do Team
+user-invocable: false
 ---
 
 # 데이터 포맷 전문가

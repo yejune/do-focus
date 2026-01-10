@@ -15,6 +15,7 @@ tags:
   - theming
 updated: 2025-11-30
 status: active
+user-invocable: false
 ---
 
 ## 빠른 참조

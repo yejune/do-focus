@@ -19,6 +19,7 @@ related-skills:
   - do-lang-flutter
   - do-lang-typescript
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # do-platform-firestore: Firebase Firestore 전문가

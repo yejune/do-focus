@@ -13,6 +13,7 @@ tags:
 updated: 2026-01-06
 status: active
 author: Do Team
+user-invocable: false
 ---
 
 # 백엔드 개발 전문가

@@ -14,6 +14,7 @@ tags:
 updated: 2025-12-30
 status: active
 author: Do Team
+user-invocable: false
 ---
 
 # Frontend 개발 전문가

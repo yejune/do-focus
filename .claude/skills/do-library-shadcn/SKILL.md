@@ -6,6 +6,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
+user-invocable: false
 ---
 
 # Enterprise shadcn/ui 컴포넌트 라이브러리

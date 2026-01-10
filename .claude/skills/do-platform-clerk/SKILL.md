@@ -9,6 +9,7 @@ related-skills: do-platform-auth0, do-lang-typescript
 updated: 2025-12-30
 status: active
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # Clerk 현대 인증 플랫폼 전문가
