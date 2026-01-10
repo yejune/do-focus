@@ -301,8 +301,14 @@ func installFromRelease(force bool) error {
 			return err
 		}
 
-		// Skip files that shouldn't be overwritten
+		// Skip files that shouldn't be overwritten or extracted
 		target := header.Name
+
+		// Always skip install.sh (should not be in project folders)
+		if target == "install.sh" {
+			continue
+		}
+
 		if !force {
 			if target == "CLAUDE.md" && fileExists("CLAUDE.md") {
 				continue
