@@ -367,7 +367,7 @@ func installFromGit(force bool) {
 	os.MkdirAll(".claude", 0755)
 	os.MkdirAll(".do/config/sections", 0755)
 
-	// Copy .claude directories
+	// Copy .claude directories (always overwrite)
 	dirs := []string{"agents", "skills", "hooks", "commands", "styles", "lib"}
 	for _, dir := range dirs {
 		src := filepath.Join(cloneDir, ".claude", dir)
@@ -408,11 +408,9 @@ func installFromGit(force bool) {
 		copyFile(userYamlExample, userYaml)
 	}
 
-	// CLAUDE.md
+	// CLAUDE.md (always overwrite)
 	claudeMdSrc := filepath.Join(cloneDir, "CLAUDE.md")
-	if force || !fileExists("CLAUDE.md") {
-		copyFile(claudeMdSrc, "CLAUDE.md")
-	}
+	copyFile(claudeMdSrc, "CLAUDE.md")
 
 	// Set permissions
 	filepath.Walk(".claude/hooks", func(path string, info os.FileInfo, err error) error {
