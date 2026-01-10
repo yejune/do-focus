@@ -6,6 +6,7 @@ category: workflow
 modularized: true
 replaces: do-core-code-templates, do-core-feedback-templates, do-project-template-optimizer
 allowed-tools: Read, Write, Edit, Grep, Glob
+user-invocable: true
 ---
 
 # 엔터프라이즈 템플릿 관리

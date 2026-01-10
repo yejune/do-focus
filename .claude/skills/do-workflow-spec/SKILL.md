@@ -12,6 +12,7 @@ tags:
 updated: 2026-01-06
 status: active
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+user-invocable: true
 ---
 
 # SPEC Workflow 관리

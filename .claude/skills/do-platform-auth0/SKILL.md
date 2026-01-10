@@ -8,6 +8,7 @@ updated: 2026-01-06
 status: active
 allowed-tools: Read, Write, Edit, Grep, Glob, WebFetch, WebSearch, Bash
 context7-libraries: /auth0/docs
+user-invocable: false
 ---
 
 # Auth0 보안 전문가

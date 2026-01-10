@@ -13,6 +13,7 @@ tags:
   - cognitive-bias
   - decision-making
 allowed-tools: Read, Grep, Glob
+user-invocable: true
 ---
 
 # Do Foundation Philosopher

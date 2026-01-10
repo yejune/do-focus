@@ -7,6 +7,7 @@ modularized: false
 category: foundation
 allowed-tools: Read, Grep, Glob
 replaces: do-core-context-budget, do-core-session-state
+user-invocable: false
 ---
 
 ## Quick Reference (30초)

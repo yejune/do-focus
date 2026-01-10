@@ -13,6 +13,7 @@ tags:
   - spec
   - isolation
 allowed-tools: Read, Write, Grep, Glob
+user-invocable: true
 ---
 
 # Do Worktree 관리

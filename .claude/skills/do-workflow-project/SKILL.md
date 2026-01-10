@@ -7,6 +7,7 @@ updated: 2026-01-06
 status: active
 category: workflow
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+user-invocable: true
 ---
 
 # Do Workflow Project - 프로젝트 관리 시스템

@@ -18,6 +18,7 @@ tags:
 updated: 2026-01-06
 status: active
 author: Do Team
+user-invocable: true
 ---
 
 # Claude Code Plugin Builder

@@ -15,6 +15,7 @@ updated: 2026-01-06
 status: active
 author: Do Team
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+user-invocable: true
 ---
 
 # 개발 워크플로우 전문가

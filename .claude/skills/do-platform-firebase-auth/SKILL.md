@@ -9,6 +9,7 @@ tags: firebase, google, social-auth, mobile, authentication
 context7-libraries: /firebase/firebase-docs
 related-skills: do-platform-firestore, do-lang-flutter
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # Firebase Authentication 전문가

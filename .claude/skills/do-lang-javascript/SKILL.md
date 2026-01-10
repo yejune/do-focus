@@ -5,6 +5,7 @@ version: 1.0.0
 updated: 2026-01-06
 status: active
 allowed-tools: Read, Grep, Glob, Bash, mcp__context7__resolve-library-id, mcp__context7__query-docs
+user-invocable: false
 ---
 
 ## 빠른 참고 (30초)

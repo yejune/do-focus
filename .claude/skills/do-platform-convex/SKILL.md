@@ -7,6 +7,7 @@ tags: convex, realtime, reactive, typescript, optimistic-updates
 context7-libraries: /get-convex/convex
 related-skills: do-platform-supabase, do-lang-typescript
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # do-platform-convex: Convex 실시간 백엔드 전문가

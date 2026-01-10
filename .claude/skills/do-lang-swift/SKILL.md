@@ -9,6 +9,7 @@ related-skills: [do-lang-kotlin, do-lang-flutter]
 updated: 2025-12-07
 status: active
 allowed-tools: [read, grep, glob, bash, edit, write]
+user-invocable: false
 ---
 
 ## 빠른 참조

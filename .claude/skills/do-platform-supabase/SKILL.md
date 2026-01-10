@@ -9,6 +9,7 @@ related-skills: [do-platform-neon, do-lang-typescript]
 updated: 2025-01-06
 status: active
 allowed-tools: [Read, Write, Bash, Grep, Glob]
+user-invocable: false
 ---
 
 # Supabase 플랫폼 전문가

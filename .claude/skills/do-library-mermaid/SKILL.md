@@ -4,6 +4,7 @@ description: Claude Code용 엔터프라이즈 Mermaid 다이어그래밍 스킬
 version: 7.0.0
 category: library
 allowed-tools: Read, Grep, Glob, Bash
+user-invocable: false
 ---
 
 ## 빠른 참조

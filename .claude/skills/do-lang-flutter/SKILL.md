@@ -8,6 +8,7 @@ context7-libraries: [/flutter/flutter, /rrousselgit/riverpod, /flutter/packages]
 related-skills: [do-lang-swift, do-lang-kotlin]
 updated: 2025-12-07
 status: active
+user-invocable: false
 ---
 
 ## 빠른 참조 (30초)

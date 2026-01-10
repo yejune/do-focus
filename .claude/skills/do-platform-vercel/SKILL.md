@@ -9,6 +9,7 @@ related-skills: do-platform-railway, do-lang-typescript
 updated: 2025-01-06
 status: active
 allowed-tools: Read, Write, Bash, Grep, Glob
+user-invocable: false
 ---
 
 # Vercel Edge 배포 전문가

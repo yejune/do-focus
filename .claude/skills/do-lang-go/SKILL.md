@@ -8,6 +8,7 @@ context7-libraries: [/gofiber/fiber, /gin-gonic/gin, /go-gorm/gorm]
 related-skills: [do-lang-rust, do-domain-backend]
 updated: 2026-01-06
 status: active
+user-invocable: false
 ---
 
 ## 빠른 참조

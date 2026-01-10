@@ -14,6 +14,7 @@ tags:
   - trust-5
   - spec-first-tdd
 allowed-tools: Read, Grep, Glob
+user-invocable: true
 ---
 
 # Do Foundation Core
