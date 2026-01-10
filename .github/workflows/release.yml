@@ -52,15 +52,13 @@ jobs:
           tar -czvf do-release.tar.gz \
             .claude/ \
             .do/ \
-            CLAUDE.md \
-            install.sh
+            CLAUDE.md
 
           # Create zip for Windows
           zip -r do-release.zip \
             .claude/ \
             .do/ \
-            CLAUDE.md \
-            install.sh
+            CLAUDE.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
