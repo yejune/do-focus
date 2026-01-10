@@ -187,6 +187,21 @@ $DO_CONFIRM_CHANGES가 "false"면 확인 없이 커밋.
 - 기능 단위로 커밋
 - 절대 금지: `git reset --hard`, `git push --force`
 
+### Multirepo 환경 [HARD]
+- [HARD] 프로젝트 루트에 `.git.multirepo` 파일이 존재하면:
+  - 명령 실행 전 **반드시** 작업 위치 확인 (AskUserQuestion 사용)
+  - 옵션 1: 프로젝트 루트에서 실행
+  - 옵션 2-N: `.git.multirepo` 파일 내 `workspaces` 리스트의 각 `path`
+  - 사용자가 선택한 경로에서만 명령 실행
+- `.git.multirepo` 파일 구조 예시:
+  ```yaml
+  workspaces:
+    - path: apps/frontend
+      repo: https://...
+    - path: apps/backend
+      repo: https://...
+  ```
+
 ### 커밋 메시지 규칙 [HARD]
 - **언어**: `language.commit` 설정에 따름 (ko/en, 기본값: en)
 - **제목**: `type: 무엇을 했는지` (50자 이내)
