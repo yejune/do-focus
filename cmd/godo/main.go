@@ -266,25 +266,44 @@ func runSync() {
 	}
 }
 
-// ensureSettingsLocal creates .claude/settings.local.json with DO_USER_NAME if not exists
+// ensureSettingsLocal creates .claude/settings.local.json with DO_USER_NAME and DO_USER_ID if not exists
 func ensureSettingsLocal() {
 	settingsPath := ".claude/settings.local.json"
 
 	// Check if already exists
 	if fileExists(settingsPath) {
+		// Check if DO_USER_ID is missing (migration)
+		data, err := os.ReadFile(settingsPath)
+		if err == nil {
+			var settings map[string]interface{}
+			if json.Unmarshal(data, &settings) == nil {
+				if env, ok := settings["env"].(map[string]interface{}); ok {
+					if _, hasUserID := env["DO_USER_ID"]; !hasUserID {
+						// Add DO_USER_ID
+						env["DO_USER_ID"] = generateUUID()
+						newData, _ := json.MarshalIndent(settings, "", "  ")
+						os.WriteFile(settingsPath, newData, 0644)
+					}
+				}
+			}
+		}
 		return
 	}
 
-	// Get username from whoami
+	// Get username from whoami (display name, can be duplicated)
 	userName := "user"
 	if out, err := exec.Command("whoami").Output(); err == nil {
 		userName = strings.TrimSpace(string(out))
 	}
 
+	// Generate unique user ID (UUID for DB mapping)
+	userID := generateUUID()
+
 	// Create settings.local.json
 	settings := map[string]interface{}{
 		"env": map[string]string{
-			"DO_USER_NAME":       userName,
+			"DO_USER_ID":         userID,   // UUID - unique, for DB
+			"DO_USER_NAME":       userName, // Display name - changeable via /do:setup
 			"DO_LANGUAGE":        "ko",
 			"DO_COMMIT_LANGUAGE": "en",
 			"DO_AI_FOOTER":       "false",
@@ -301,6 +320,21 @@ func ensureSettingsLocal() {
 	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
 		fmt.Printf("Warning: Failed to create settings.local.json: %v\n", err)
 	}
+}
+
+// generateUUID generates a simple UUID v4
+func generateUUID() string {
+	// Simple UUID generation using crypto/rand would be better,
+	// but for simplicity we use time-based approach
+	now := time.Now().UnixNano()
+	pid := os.Getpid()
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		uint32(now>>32),
+		uint16(now>>16),
+		uint16(0x4000|(now&0x0fff)),       // Version 4
+		uint16(0x8000|((now>>48)&0x3fff)), // Variant
+		uint64(pid)<<32|uint64(now&0xffffffff),
+	)
 }
 
 func isInstalled() bool {

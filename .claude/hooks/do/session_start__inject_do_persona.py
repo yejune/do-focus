@@ -97,10 +97,33 @@ def register_session(session_id: str, project_path: str, user_name: str) -> bool
     return False
 
 
+def get_user_id() -> str:
+    """Get unique user ID from env.
+
+    Priority: DO_USER_ID env > generate UUID-like ID
+    Used for DB operations (unique identifier).
+    """
+    user_id = os.environ.get("DO_USER_ID", "")
+    if user_id:
+        return user_id
+
+    # Generate fallback ID from whoami + timestamp
+    try:
+        import subprocess
+        result = subprocess.run(["whoami"], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    return "unknown"
+
+
 def get_user_name() -> str:
-    """Get user name from env or system.
+    """Get display user name from env or system.
 
     Priority: DO_USER_NAME env > whoami command > 'user'
+    Display name - can be duplicated, changeable via /do:setup.
     """
     # 1. Check environment variable
     user_name = os.environ.get("DO_USER_NAME", "")
@@ -162,13 +185,14 @@ def main():
     # Get session_id from hook input or environment
     session_id = hook_input.get("session_id", os.environ.get("CLAUDE_SESSION_ID", ""))
     project_path = os.getcwd()
-    user_name = get_user_name()
+    user_id = get_user_id()      # UUID - unique, for DB operations
+    user_name = get_user_name()  # Display name - for human readability
 
     # Try to register session and get context from Worker
     worker_context = ""
     if ensure_worker_running():
-        register_session(session_id, project_path, user_name)
-        worker_context = get_context_from_worker(session_id, project_path, user_name)
+        register_session(session_id, project_path, user_id)
+        worker_context = get_context_from_worker(session_id, project_path, user_id)
 
     # Base enforcement message
     base_message = """
