@@ -6,6 +6,7 @@ import Sessions from './pages/Sessions'
 import Observations from './pages/Observations'
 import Plans from './pages/Plans'
 import Reports from './pages/Reports'
+import UserPrompts from './pages/UserPrompts'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="observations" element={<Observations />} />
             <Route path="plans" element={<Plans />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="prompts" element={<UserPrompts />} />
           </Route>
         </Routes>
       </BrowserRouter>

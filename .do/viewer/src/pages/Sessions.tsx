@@ -1,6 +1,19 @@
 import { useEffect, useState } from 'react'
 import { api, type Session } from '../api/client'
 
+// Relative time helper
+function timeAgo(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (seconds < 60) return '방금 전'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}분 전`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}시간 전`
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}일 전`
+  return date.toLocaleDateString('ko-KR')
+}
+
 export default function Sessions() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,15 +77,20 @@ export default function Sessions() {
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">
                         {session.project_id?.split('/').slice(-2).join('/') || session.id || 'Unknown'}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(session.started_at).toLocaleString('ko-KR')}
-                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-400">
+                          시작: {new Date(session.started_at).toLocaleDateString('ko-KR')}
+                        </span>
+                        <span className="text-xs text-gray-500 font-medium">
+                          · {timeAgo(session.updated_at || session.started_at)}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded ${
+                    <span className={`text-xs px-2 py-1 rounded ml-2 ${
                       session.ended_at
                         ? 'bg-gray-100 text-gray-600'
                         : 'bg-green-100 text-green-700'

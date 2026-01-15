@@ -44,6 +44,7 @@ func (s *Server) setupRoutes() {
 		api.POST("/summaries/generate", s.handleGenerateSummary)
 
 		// User Prompts
+		api.GET("/prompts", s.handleGetUserPrompts)
 		api.POST("/prompts", s.handleCreateUserPrompt)
 
 		// FTS5 Search
@@ -627,6 +628,30 @@ func generateRuleBasedSummary(observations []models.Observation, lastMessage str
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+// handleGetUserPrompts handles user prompt list retrieval.
+func (s *Server) handleGetUserPrompts(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	limitStr := c.DefaultQuery("limit", "100")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 {
+		limit = 100
+	}
+
+	sessionID := c.Query("session_id")
+
+	prompts, err := s.db.GetUserPrompts(ctx, sessionID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, prompts)
 }
 
 // handleCreateUserPrompt handles user prompt creation.

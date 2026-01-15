@@ -9,9 +9,11 @@ export interface Project {
 
 export interface Session {
   id: string
+  user_name?: string
   project_id?: string
   started_at: string
   ended_at?: string
+  updated_at?: string
   summary?: string
 }
 
@@ -42,7 +44,7 @@ export interface Summary {
   date: string
   sessions_count: number
   observations_count: number
-  highlights: string[]
+  highlights?: string[]
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
