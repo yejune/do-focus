@@ -12,7 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const version = "0.1.0"
+// Version is set by main package
+var Version = "dev"
 
 // setupRoutes configures all API routes.
 func (s *Server) setupRoutes() {
@@ -71,7 +72,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 		Status:   "ok",
 		DBType:   dbType,
 		DBStatus: dbStatus,
-		Version:  version,
+		Version:  Version,
 	})
 }
 

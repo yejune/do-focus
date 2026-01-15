@@ -78,6 +78,9 @@ func main() {
 		listenPort = "3778"
 	}
 
+	// Set version for health endpoint
+	server.Version = version
+
 	// Initialize server
 	srv, err := server.New()
 	if err != nil {
