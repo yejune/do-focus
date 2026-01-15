@@ -287,10 +287,12 @@ func (s *Server) handleGetSession(c *gin.Context) {
 func (s *Server) handleGetObservations(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	obsType := c.Query("type")
-	limitStr := c.DefaultQuery("limit", "100")
+	limitStr := c.DefaultQuery("limit", "50")
 	limit, _ := strconv.Atoi(limitStr)
+	offsetStr := c.DefaultQuery("offset", "0")
+	offset, _ := strconv.Atoi(offsetStr)
 
-	observations, err := s.db.GetObservationsFiltered(c.Request.Context(), sessionID, obsType, limit)
+	observations, err := s.db.GetObservationsFiltered(c.Request.Context(), sessionID, obsType, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "database_error",
@@ -530,7 +532,7 @@ func (s *Server) handleGenerateSummary(c *gin.Context) {
 	}
 
 	// 2. Get observations for the session
-	observations, err := s.db.GetObservationsFiltered(ctx, req.SessionID, "", 100)
+	observations, err := s.db.GetObservationsFiltered(ctx, req.SessionID, "", 100, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "database_error",

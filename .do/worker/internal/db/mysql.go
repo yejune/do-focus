@@ -251,19 +251,22 @@ func (m *MySQL) GetRecentObservations(ctx context.Context, userName string, limi
 	return observations, rows.Err()
 }
 
-// GetObservationsFiltered retrieves observations with optional filters.
-func (m *MySQL) GetObservationsFiltered(ctx context.Context, sessionID string, obsType string, limit int) ([]models.Observation, error) {
+// GetObservationsFiltered retrieves observations with optional filters and pagination.
+func (m *MySQL) GetObservationsFiltered(ctx context.Context, sessionID string, obsType string, limit int, offset int) ([]models.Observation, error) {
 	query := `
 		SELECT id, session_id, COALESCE(agent_name, ''), type, content, importance, COALESCE(tags, ''), created_at
 		FROM observations
 		WHERE (? = '' OR session_id = ?) AND (? = '' OR type = ?)
 		ORDER BY created_at DESC
-		LIMIT ?
+		LIMIT ? OFFSET ?
 	`
 	if limit <= 0 {
-		limit = 100
+		limit = 50
 	}
-	rows, err := m.db.QueryContext(ctx, query, sessionID, sessionID, obsType, obsType, limit)
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := m.db.QueryContext(ctx, query, sessionID, sessionID, obsType, obsType, limit, offset)
 	if err != nil {
 		return nil, err
 	}

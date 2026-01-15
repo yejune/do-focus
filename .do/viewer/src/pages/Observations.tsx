@@ -1,39 +1,66 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api, type Observation } from '../api/client'
 import Timeline from '../components/Timeline'
+
+const PAGE_SIZE = 50
 
 export default function Observations() {
   const [observations, setObservations] = useState<Observation[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [hasMore, setHasMore] = useState(true)
+  const [offset, setOffset] = useState(0)
+  const loaderRef = useRef<HTMLDivElement>(null)
 
-  const loadObservations = useCallback(async () => {
-    setLoading(true)
+  const loadObservations = useCallback(async (reset = true) => {
+    if (reset) {
+      setLoading(true)
+      setOffset(0)
+    } else {
+      setLoadingMore(true)
+    }
     setError(null)
+
     try {
-      const params: Record<string, string> = {}
+      const currentOffset = reset ? 0 : offset
+      const params: Record<string, string> = {
+        limit: String(PAGE_SIZE),
+        offset: String(currentOffset)
+      }
       if (typeFilter !== 'all') {
         params.type = typeFilter
       }
       const data = await api.getObservations(params)
-      setObservations(data || [])
+      const newData = data || []
+
+      if (reset) {
+        setObservations(newData)
+        setOffset(PAGE_SIZE)
+      } else {
+        setObservations(prev => [...prev, ...newData])
+        setOffset(prev => prev + PAGE_SIZE)
+      }
+      setHasMore(newData.length === PAGE_SIZE)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load observations')
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }, [typeFilter])
+  }, [typeFilter, offset])
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      loadObservations()
+      loadObservations(true)
       return
     }
 
     setLoading(true)
     setError(null)
+    setHasMore(false)
     try {
       const data = await api.searchObservations(searchQuery)
       setObservations(data || [])
@@ -44,9 +71,28 @@ export default function Observations() {
     }
   }
 
+  // Initial load
   useEffect(() => {
-    loadObservations()
-  }, [loadObservations])
+    loadObservations(true)
+  }, [typeFilter])
+
+  // Infinite scroll with IntersectionObserver
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore && !searchQuery) {
+          loadObservations(false)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadingMore, searchQuery, loadObservations])
 
   const types = ['all', 'decision', 'error', 'success', 'insight', 'question']
 
@@ -114,6 +160,29 @@ export default function Observations() {
       {/* Observations Timeline */}
       <div className="bg-white rounded-lg shadow p-6">
         <Timeline items={observations} loading={loading} />
+
+        {/* Infinite scroll loader */}
+        {!loading && hasMore && !searchQuery && (
+          <div ref={loaderRef} className="py-4 text-center">
+            {loadingMore ? (
+              <div className="flex items-center justify-center gap-2 text-gray-500">
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Loading more...</span>
+              </div>
+            ) : (
+              <span className="text-gray-400 text-sm">Scroll for more</span>
+            )}
+          </div>
+        )}
+
+        {!loading && !hasMore && observations.length > 0 && (
+          <div className="py-4 text-center text-gray-400 text-sm">
+            No more observations
+          </div>
+        )}
       </div>
     </div>
   )

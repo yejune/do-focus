@@ -25,7 +25,7 @@ type Adapter interface {
 	CreateObservation(ctx context.Context, obs *models.Observation) error
 	GetObservations(ctx context.Context, sessionID string) ([]models.Observation, error)
 	GetRecentObservations(ctx context.Context, userName string, limit int) ([]models.Observation, error)
-	GetObservationsFiltered(ctx context.Context, sessionID string, obsType string, limit int) ([]models.Observation, error)
+	GetObservationsFiltered(ctx context.Context, sessionID string, obsType string, limit int, offset int) ([]models.Observation, error)
 	SearchObservations(ctx context.Context, query string, limit int) ([]models.Observation, error)
 
 	// Summary operations
