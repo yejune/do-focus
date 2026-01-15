@@ -87,8 +87,17 @@ def get_context_from_worker(session_id: str, project_path: str, user_name: str) 
 
 
 def main():
-    # Get environment variables
-    session_id = os.environ.get("CLAUDE_SESSION_ID", "")
+    # Read hook input from stdin
+    hook_input = {}
+    try:
+        import select
+        if select.select([sys.stdin], [], [], 0)[0]:
+            hook_input = json.loads(sys.stdin.read())
+    except Exception:
+        pass
+
+    # Get session_id from hook input or environment
+    session_id = hook_input.get("session_id", os.environ.get("CLAUDE_SESSION_ID", ""))
     project_path = os.getcwd()
     user_name = os.environ.get("DO_USER_NAME", "")
 
