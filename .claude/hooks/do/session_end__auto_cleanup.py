@@ -30,7 +30,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
+# Optional: requests for HTTP calls
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 # Add module path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
@@ -137,6 +142,9 @@ def end_session_in_worker(session_id: str, project_path: str) -> bool:
     Returns:
         Success status
     """
+    if not HAS_REQUESTS:
+        return False
+
     try:
         response = requests.put(
             f"{WORKER_URL}/api/sessions/{session_id}/end",
@@ -172,6 +180,9 @@ def request_summary_generation(session_id: str) -> bool:
     Returns:
         Success status
     """
+    if not HAS_REQUESTS:
+        return False
+
     try:
         response = requests.post(
             f"{WORKER_URL}/api/summaries/generate",
