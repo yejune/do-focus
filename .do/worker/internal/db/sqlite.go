@@ -579,8 +579,17 @@ func (s *SQLite) GetProjects(ctx context.Context) ([]models.Project, error) {
 	var projects []models.Project
 	for rows.Next() {
 		var p models.Project
-		if err := rows.Scan(&p.ID, &p.Path, &p.SessionCount, &p.LastActivity); err != nil {
+		var lastActivityStr string
+		if err := rows.Scan(&p.ID, &p.Path, &p.SessionCount, &lastActivityStr); err != nil {
 			return nil, err
+		}
+		// Parse SQLite datetime string (format: 2006-01-02 15:04:05.999999999+09:00)
+		if t, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", lastActivityStr); err == nil {
+			p.LastActivity = t
+		} else if t, err := time.Parse("2006-01-02 15:04:05-07:00", lastActivityStr); err == nil {
+			p.LastActivity = t
+		} else if t, err := time.Parse("2006-01-02 15:04:05", lastActivityStr); err == nil {
+			p.LastActivity = t
 		}
 		projects = append(projects, p)
 	}
