@@ -245,7 +245,10 @@ func runSync() {
 		fmt.Printf("Warning: Failed to register project: %v\n", err)
 	}
 
-	// 3. 기존 sync 로직 (hooks 복사 등)
+	// 3. settings.local.json 자동 생성 (없으면)
+	ensureSettingsLocal()
+
+	// 4. 기존 sync 로직 (hooks 복사 등)
 	if isInstalled() {
 		// Already installed - run update
 		fmt.Println("업데이트 중...")
@@ -260,6 +263,43 @@ func runSync() {
 		fmt.Println("================================")
 		fmt.Println()
 		install(false)
+	}
+}
+
+// ensureSettingsLocal creates .claude/settings.local.json with DO_USER_NAME if not exists
+func ensureSettingsLocal() {
+	settingsPath := ".claude/settings.local.json"
+
+	// Check if already exists
+	if fileExists(settingsPath) {
+		return
+	}
+
+	// Get username from whoami
+	userName := "user"
+	if out, err := exec.Command("whoami").Output(); err == nil {
+		userName = strings.TrimSpace(string(out))
+	}
+
+	// Create settings.local.json
+	settings := map[string]interface{}{
+		"env": map[string]string{
+			"DO_USER_NAME":       userName,
+			"DO_LANGUAGE":        "ko",
+			"DO_COMMIT_LANGUAGE": "en",
+			"DO_AI_FOOTER":       "false",
+			"DO_CONFIRM_CHANGES": "false",
+		},
+	}
+
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return
+	}
+
+	os.MkdirAll(".claude", 0755)
+	if err := os.WriteFile(settingsPath, data, 0644); err != nil {
+		fmt.Printf("Warning: Failed to create settings.local.json: %v\n", err)
 	}
 }
 

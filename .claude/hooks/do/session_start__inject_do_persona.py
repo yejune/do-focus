@@ -97,6 +97,29 @@ def register_session(session_id: str, project_path: str, user_name: str) -> bool
     return False
 
 
+def get_user_name() -> str:
+    """Get user name from env or system.
+
+    Priority: DO_USER_NAME env > whoami command > 'user'
+    """
+    # 1. Check environment variable
+    user_name = os.environ.get("DO_USER_NAME", "")
+    if user_name:
+        return user_name
+
+    # 2. Try whoami command
+    try:
+        import subprocess
+        result = subprocess.run(["whoami"], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+
+    # 3. Default fallback
+    return "user"
+
+
 def get_context_from_worker(session_id: str, project_path: str, user_name: str) -> str:
     """Fetch compressed context from Worker service.
 
@@ -118,7 +141,9 @@ def get_context_from_worker(session_id: str, project_path: str, user_name: str) 
         req = urllib.request.Request(f"{WORKER_URL}/api/context/inject?{params}")
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status == 200:
-                return json.loads(resp.read().decode("utf-8")).get("context", "")
+                data = json.loads(resp.read().decode("utf-8"))
+                # API returns "markdown" key, not "context"
+                return data.get("markdown", "")
     except Exception:
         pass
     return ""
@@ -137,7 +162,7 @@ def main():
     # Get session_id from hook input or environment
     session_id = hook_input.get("session_id", os.environ.get("CLAUDE_SESSION_ID", ""))
     project_path = os.getcwd()
-    user_name = os.environ.get("DO_USER_NAME", "")
+    user_name = get_user_name()
 
     # Try to register session and get context from Worker
     worker_context = ""
