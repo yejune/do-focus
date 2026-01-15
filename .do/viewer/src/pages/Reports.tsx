@@ -13,6 +13,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState(7)
+  const [selectedSummary, setSelectedSummary] = useState<SessionSummary | null>(null)
 
   useEffect(() => {
     async function loadSummaries() {
@@ -126,7 +127,11 @@ export default function Reports() {
                 </div>
                 <div className="space-y-3">
                   {groupedByDate[date].map((summary) => (
-                    <div key={summary.id} className="bg-gray-50 rounded-lg p-3">
+                    <button
+                      key={summary.id}
+                      onClick={() => setSelectedSummary(summary)}
+                      className="w-full text-left bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors"
+                    >
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-mono text-gray-400">
                           {summary.session_id.slice(0, 8)}...
@@ -135,10 +140,13 @@ export default function Reports() {
                           {new Date(summary.created_at).toLocaleTimeString('ko-KR')}
                         </span>
                       </div>
-                      <div className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">
+                      <div className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-3">
                         {summary.content}
                       </div>
-                    </div>
+                      <span className="text-xs text-primary-600 mt-2 inline-block">
+                        클릭하여 상세보기 →
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -146,6 +154,48 @@ export default function Reports() {
           )}
         </div>
       </div>
+
+      {/* Detail Modal */}
+      {selectedSummary && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold">Session Summary</h3>
+                <p className="text-xs text-gray-500 font-mono">
+                  {selectedSummary.session_id}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedSummary(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-xs text-gray-400 mb-2">
+                {new Date(selectedSummary.created_at).toLocaleString('ko-KR')}
+              </p>
+              <div className="prose prose-sm max-w-none">
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
+                  {selectedSummary.content}
+                </pre>
+              </div>
+            </div>
+            <div className="p-4 border-t flex justify-end">
+              <button
+                onClick={() => setSelectedSummary(null)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
