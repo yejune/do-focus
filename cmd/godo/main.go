@@ -692,12 +692,32 @@ func workerStart() {
 		time.Sleep(200 * time.Millisecond)
 		if isWorkerRunning() {
 			fmt.Printf("✓ Worker started (PID: %d)\n", cmd.Process.Pid)
+			// Get version from health endpoint
+			if ver := getWorkerVersion(); ver != "" {
+				fmt.Printf("  Version: %s\n", ver)
+			}
 			fmt.Println("  http://127.0.0.1:3778")
 			return
 		}
 	}
 
 	fmt.Println("Warning: Worker may not have started correctly")
+}
+
+func getWorkerVersion() string {
+	resp, err := http.Get("http://127.0.0.1:3778/health")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var health map[string]interface{}
+	if json.NewDecoder(resp.Body).Decode(&health) == nil {
+		if v, ok := health["version"].(string); ok {
+			return v
+		}
+	}
+	return ""
 }
 
 func workerStop() {
