@@ -30,12 +30,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Optional: requests for HTTP calls
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+import urllib.request
+import urllib.error
 
 # Add module path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
@@ -142,28 +138,30 @@ def end_session_in_worker(session_id: str, project_path: str) -> bool:
     Returns:
         Success status
     """
-    if not HAS_REQUESTS:
-        return False
-
     try:
-        response = requests.put(
+        data = json.dumps({
+            "project_path": project_path,
+            "user_name": os.environ.get("DO_USER_NAME", ""),
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
             f"{WORKER_URL}/api/sessions/{session_id}/end",
-            json={
-                "project_path": project_path,
-                "user_name": os.environ.get("DO_USER_NAME", ""),
-            },
-            timeout=2,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="PUT",
         )
-        if response.status_code == 200:
-            logger.info(f"Session end notified to Worker: {session_id}")
-            return True
-        else:
-            logger.warning(f"Worker session end failed: {response.status_code}")
-            return False
-    except requests.exceptions.ConnectionError:
+
+        with urllib.request.urlopen(req, timeout=2) as response:
+            if response.status == 200:
+                logger.info(f"Session end notified to Worker: {session_id}")
+                return True
+            else:
+                logger.warning(f"Worker session end failed: {response.status}")
+                return False
+    except urllib.error.URLError:
         logger.debug("Worker not running, skipping session end notification")
         return False
-    except requests.exceptions.Timeout:
+    except TimeoutError:
         logger.warning("Worker session end notification timed out")
         return False
     except Exception as e:
@@ -180,25 +178,27 @@ def request_summary_generation(session_id: str) -> bool:
     Returns:
         Success status
     """
-    if not HAS_REQUESTS:
-        return False
-
     try:
-        response = requests.post(
+        data = json.dumps({"session_id": session_id}).encode("utf-8")
+
+        req = urllib.request.Request(
             f"{WORKER_URL}/api/summaries/generate",
-            json={"session_id": session_id},
-            timeout=2,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        if response.status_code in (200, 201, 202):
-            logger.info(f"Summary generation requested for session: {session_id}")
-            return True
-        else:
-            logger.warning(f"Worker summary generation failed: {response.status_code}")
-            return False
-    except requests.exceptions.ConnectionError:
+
+        with urllib.request.urlopen(req, timeout=2) as response:
+            if response.status in (200, 201, 202):
+                logger.info(f"Summary generation requested for session: {session_id}")
+                return True
+            else:
+                logger.warning(f"Worker summary generation failed: {response.status}")
+                return False
+    except urllib.error.URLError:
         logger.debug("Worker not running, skipping summary generation request")
         return False
-    except requests.exceptions.Timeout:
+    except TimeoutError:
         logger.warning("Worker summary generation request timed out")
         return False
     except Exception as e:

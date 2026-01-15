@@ -9,13 +9,9 @@ import sys
 import os
 import time
 import subprocess
-
-# Optional: requests for HTTP calls
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+import urllib.request
+import urllib.error
+import urllib.parse
 
 WORKER_PORT = int(os.environ.get("DO_WORKER_PORT", "3778"))
 WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
@@ -23,15 +19,13 @@ WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
 
 def ensure_worker_running() -> bool:
     """Check if Worker is running, start if not."""
-    if not HAS_REQUESTS:
-        return False
-
     try:
-        resp = requests.get(f"{WORKER_URL}/health", timeout=1)
-        return resp.status_code == 200
+        req = urllib.request.Request(f"{WORKER_URL}/health")
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            return resp.status == 200
     except Exception:
         # Worker not running, try to start it
-        worker_path = os.path.join(os.getcwd(), ".do/worker/bin/do-worker")
+        worker_path = os.path.join(os.getcwd(), ".do/bin/do-worker")
         if os.path.exists(worker_path):
             try:
                 subprocess.Popen(
@@ -49,20 +43,25 @@ def ensure_worker_running() -> bool:
 
 def register_session(session_id: str, project_path: str, user_name: str) -> bool:
     """Register session with Worker service."""
-    if not HAS_REQUESTS or not session_id:
+    if not session_id:
         return False
 
     try:
-        resp = requests.post(
+        data = json.dumps({
+            "id": session_id,
+            "user_name": user_name or "unknown",
+            "project_id": project_path,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
             f"{WORKER_URL}/api/sessions",
-            json={
-                "id": session_id,
-                "user_name": user_name or "unknown",
-                "project_id": project_path,
-            },
-            timeout=5
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        return resp.status_code in (200, 201)
+
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status in (200, 201)
     except Exception:
         pass
     return False
@@ -70,22 +69,18 @@ def register_session(session_id: str, project_path: str, user_name: str) -> bool
 
 def get_context_from_worker(session_id: str, project_path: str, user_name: str) -> str:
     """Fetch compressed context from Worker service."""
-    if not HAS_REQUESTS:
-        return ""
-
     try:
-        resp = requests.get(
-            f"{WORKER_URL}/api/context/inject",
-            params={
-                "session_id": session_id,
-                "project_path": project_path,
-                "user_name": user_name,
-                "level": 1  # Progressive disclosure level
-            },
-            timeout=5
-        )
-        if resp.status_code == 200:
-            return resp.json().get("context", "")
+        params = urllib.parse.urlencode({
+            "session_id": session_id,
+            "project_path": project_path,
+            "user_name": user_name,
+            "level": 1,
+        })
+
+        req = urllib.request.Request(f"{WORKER_URL}/api/context/inject?{params}")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                return json.loads(resp.read().decode("utf-8")).get("context", "")
     except Exception:
         pass
     return ""
