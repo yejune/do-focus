@@ -539,14 +539,32 @@ func (s *Server) handleGenerateSummary(c *gin.Context) {
 		return
 	}
 
-	// 3. Generate rule-based summary
-	summaryContent := generateRuleBasedSummary(observations, req.LastAssistantMessage)
+	// 3. Get user prompts for request extraction
+	userPrompts, _ := s.db.GetUserPrompts(ctx, req.SessionID, 10)
+	var promptTexts []string
+	for _, p := range userPrompts {
+		promptTexts = append(promptTexts, p.PromptText)
+	}
 
-	// 4. Save summary to DB
+	// 4. Generate structured summary
+	structured := generateStructuredSummary(observations, req.LastAssistantMessage, promptTexts)
+
+	// 5. Convert to JSON for file lists
+	filesReadJSON, _ := json.Marshal(structured.FilesRead)
+	filesEditedJSON, _ := json.Marshal(structured.FilesEdited)
+
+	// 6. Save summary to DB with structured fields
 	summary := &models.Summary{
-		SessionID: req.SessionID,
-		Type:      "session",
-		Content:   summaryContent,
+		SessionID:    req.SessionID,
+		Type:         "session",
+		Content:      formatSummaryAsMarkdown(structured),
+		Request:      strPtr(structured.Request),
+		Investigated: strPtr(structured.Investigated),
+		Learned:      strPtr(structured.Learned),
+		Completed:    strPtr(structured.Completed),
+		NextSteps:    strPtr(structured.NextSteps),
+		FilesRead:    string(filesReadJSON),
+		FilesEdited:  string(filesEditedJSON),
 	}
 
 	if err := s.db.CreateSummary(ctx, summary); err != nil {
@@ -560,74 +578,266 @@ func (s *Server) handleGenerateSummary(c *gin.Context) {
 	c.JSON(http.StatusCreated, summary)
 }
 
-// generateRuleBasedSummary extracts key information from observations using rules.
-func generateRuleBasedSummary(observations []models.Observation, lastMessage string) string {
-	var completed []string
-	var decisions []string
-	var learnings []string
-	var request string
+// StructuredSummary holds parsed summary fields.
+type StructuredSummary struct {
+	Request      string
+	Investigated string
+	Learned      string
+	Completed    string
+	NextSteps    string
+	FilesRead    []string
+	FilesEdited  []string
+}
 
-	// Extract request from last message (first sentence)
-	if lastMessage != "" {
-		sentences := strings.SplitN(lastMessage, ".", 2)
-		if len(sentences) > 0 {
-			request = strings.TrimSpace(sentences[0])
+// generateStructuredSummary extracts key information from lastMessage and observations.
+func generateStructuredSummary(observations []models.Observation, lastMessage string, userPrompts []string) StructuredSummary {
+	summary := StructuredSummary{}
+
+	// 1. Request: 첫 번째 user prompt 사용
+	if len(userPrompts) > 0 {
+		// 첫 프롬프트에서 500자 제한
+		req := userPrompts[0]
+		if len(req) > 500 {
+			req = req[:500] + "..."
 		}
+		summary.Request = req
 	}
 
-	// Categorize observations by type
+	// 2. lastMessage에서 마크다운 구조 파싱
+	if lastMessage != "" {
+		parsed := parseMarkdownStructure(lastMessage)
+		if summary.Request == "" && parsed.Request != "" {
+			summary.Request = parsed.Request
+		}
+		summary.Investigated = parsed.Investigated
+		summary.Learned = parsed.Learned
+		summary.Completed = parsed.Completed
+		summary.NextSteps = parsed.NextSteps
+	}
+
+	// 3. observations에서 파일 목록 및 추가 정보 추출
+	filesReadMap := make(map[string]bool)
+	filesEditedMap := make(map[string]bool)
+	var completedItems []string
+
 	for _, obs := range observations {
 		switch obs.Type {
+		case "read":
+			path := extractFilePath(obs.Content)
+			if path != "" && !filesReadMap[path] {
+				filesReadMap[path] = true
+				summary.FilesRead = append(summary.FilesRead, path)
+			}
+		case "feature", "edit", "write":
+			path := extractFilePath(obs.Content)
+			if path != "" && !filesEditedMap[path] {
+				filesEditedMap[path] = true
+				summary.FilesEdited = append(summary.FilesEdited, path)
+			}
 		case "decision":
-			decisions = append(decisions, obs.Content)
-			completed = append(completed, obs.Content)
+			completedItems = append(completedItems, obs.Content)
 		case "bugfix":
-			completed = append(completed, "Fixed: "+obs.Content)
-		case "feature":
-			completed = append(completed, "Implemented: "+obs.Content)
+			completedItems = append(completedItems, "Fixed: "+obs.Content)
 		case "learning", "insight":
-			learnings = append(learnings, obs.Content)
-		case "pattern":
-			learnings = append(learnings, "Pattern: "+obs.Content)
+			if summary.Learned == "" {
+				summary.Learned = obs.Content
+			} else {
+				summary.Learned += "\n- " + obs.Content
+			}
+		case "commit":
+			completedItems = append(completedItems, obs.Content)
 		}
 	}
 
-	// Build summary content
+	// observations에서 추출한 완료 항목 추가 (파싱된 내용이 없을 때만)
+	if summary.Completed == "" && len(completedItems) > 0 {
+		summary.Completed = strings.Join(completedItems, "\n- ")
+	}
+
+	return summary
+}
+
+// parseMarkdownStructure parses markdown text and extracts structured sections.
+func parseMarkdownStructure(text string) StructuredSummary {
+	summary := StructuredSummary{}
+
+	// 코드 블록 제거
+	text = removeCodeBlocks(text)
+
+	// 헤딩별 섹션 추출
+	sections := extractSections(text)
+
+	for heading, content := range sections {
+		headingLower := strings.ToLower(heading)
+		contentClean := strings.TrimSpace(content)
+		if contentClean == "" {
+			continue
+		}
+
+		switch {
+		case containsAny(headingLower, "request", "요청", "task"):
+			summary.Request = contentClean
+		case containsAny(headingLower, "investigated", "분석", "조사", "확인", "탐색"):
+			summary.Investigated = contentClean
+		case containsAny(headingLower, "learned", "학습", "발견", "insight", "배움"):
+			summary.Learned = contentClean
+		case containsAny(headingLower, "completed", "완료", "구현", "수정", "done", "result"):
+			summary.Completed = contentClean
+		case containsAny(headingLower, "next", "다음", "todo", "후속", "계획"):
+			summary.NextSteps = contentClean
+		}
+	}
+
+	// 헤딩이 없는 경우 리스트 아이템에서 추출
+	if summary.Completed == "" {
+		listItems := extractListItems(text)
+		var completedItems []string
+		for _, item := range listItems {
+			itemLower := strings.ToLower(item)
+			if containsAny(itemLower, "완료", "구현", "수정", "추가", "fix", "add", "implement", "update") {
+				completedItems = append(completedItems, item)
+			}
+		}
+		if len(completedItems) > 0 {
+			summary.Completed = strings.Join(completedItems, "\n")
+		}
+	}
+
+	return summary
+}
+
+// removeCodeBlocks removes ```...``` code blocks from text.
+func removeCodeBlocks(text string) string {
+	result := text
+	for {
+		start := strings.Index(result, "```")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start+3:], "```")
+		if end == -1 {
+			// 닫히지 않은 코드 블록 - 끝까지 제거
+			result = result[:start]
+			break
+		}
+		result = result[:start] + result[start+3+end+3:]
+	}
+	return result
+}
+
+// extractSections extracts ## heading sections from markdown.
+func extractSections(text string) map[string]string {
+	sections := make(map[string]string)
+	lines := strings.Split(text, "\n")
+
+	var currentHeading string
+	var currentContent []string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "# ") {
+			// 이전 섹션 저장
+			if currentHeading != "" {
+				sections[currentHeading] = strings.TrimSpace(strings.Join(currentContent, "\n"))
+			}
+			// 새 섹션 시작
+			currentHeading = strings.TrimPrefix(strings.TrimPrefix(line, "## "), "# ")
+			currentContent = nil
+		} else if currentHeading != "" {
+			currentContent = append(currentContent, line)
+		}
+	}
+
+	// 마지막 섹션 저장
+	if currentHeading != "" {
+		sections[currentHeading] = strings.TrimSpace(strings.Join(currentContent, "\n"))
+	}
+
+	return sections
+}
+
+// extractListItems extracts - or * list items from text.
+func extractListItems(text string) []string {
+	var items []string
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+			if item != "" {
+				items = append(items, item)
+			}
+		}
+	}
+	return items
+}
+
+// containsAny checks if text contains any of the keywords.
+func containsAny(text string, keywords ...string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractFilePath extracts file path from content like "수정: /path/to/file" or "읽기: /path/to/file".
+func extractFilePath(content string) string {
+	// "수정: ", "읽기: ", "테스트: " 등의 접두사 제거
+	prefixes := []string{"수정: ", "읽기: ", "테스트: ", "Implemented: ", "Fixed: "}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(content, prefix) {
+			return strings.TrimPrefix(content, prefix)
+		}
+	}
+	// 경로로 보이면 그대로 반환
+	if strings.HasPrefix(content, "/") || strings.Contains(content, "/") {
+		return content
+	}
+	return ""
+}
+
+// strPtr returns a pointer to the string, or nil if empty.
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// formatSummaryAsMarkdown converts StructuredSummary to markdown string for legacy compatibility.
+func formatSummaryAsMarkdown(s StructuredSummary) string {
 	var parts []string
 
-	if request != "" {
-		parts = append(parts, "## Request\n"+request)
+	if s.Request != "" {
+		parts = append(parts, "## Request\n"+s.Request)
+	}
+	if s.Investigated != "" {
+		parts = append(parts, "## Investigated\n"+s.Investigated)
+	}
+	if s.Completed != "" {
+		parts = append(parts, "## Completed\n"+s.Completed)
+	}
+	if s.Learned != "" {
+		parts = append(parts, "## Learned\n"+s.Learned)
+	}
+	if s.NextSteps != "" {
+		parts = append(parts, "## Next Steps\n"+s.NextSteps)
 	}
 
-	if len(completed) > 0 {
-		completedStr := "## Completed\n"
-		for _, c := range completed {
-			completedStr += "- " + c + "\n"
+	if len(s.FilesEdited) > 0 {
+		filesStr := "## Files Edited\n"
+		for _, f := range s.FilesEdited {
+			filesStr += "- " + f + "\n"
 		}
-		parts = append(parts, completedStr)
-	}
-
-	if len(decisions) > 0 {
-		decisionsStr := "## Decisions\n"
-		for _, d := range decisions {
-			decisionsStr += "- " + d + "\n"
-		}
-		parts = append(parts, decisionsStr)
-	}
-
-	if len(learnings) > 0 {
-		learningsStr := "## Learnings\n"
-		for _, l := range learnings {
-			learningsStr += "- " + l + "\n"
-		}
-		parts = append(parts, learningsStr)
+		parts = append(parts, filesStr)
 	}
 
 	if len(parts) == 0 {
-		return "No significant observations recorded in this session."
+		return "No significant work recorded in this session."
 	}
 
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n\n")
 }
 
 // handleGetUserPrompts handles user prompt list retrieval.

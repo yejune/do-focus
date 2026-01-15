@@ -399,10 +399,28 @@ func (s *SQLite) SearchObservations(ctx context.Context, query string, limit int
 	return observations, rows.Err()
 }
 
-// CreateSummary creates a new summary.
+// CreateSummary creates a new summary with structured fields.
 func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) error {
-	query := `INSERT INTO summaries (session_id, type, content, created_at) VALUES (?, ?, ?, ?)`
-	result, err := s.db.ExecContext(ctx, query, summary.SessionID, summary.Type, summary.Content, time.Now())
+	query := `INSERT INTO summaries (
+		session_id, type, content, created_at,
+		request, investigated, learned, completed, next_steps,
+		files_read, files_edited, discovery_tokens
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := s.db.ExecContext(ctx, query,
+		summary.SessionID,
+		summary.Type,
+		summary.Content,
+		time.Now(),
+		summary.Request,
+		summary.Investigated,
+		summary.Learned,
+		summary.Completed,
+		summary.NextSteps,
+		summary.FilesRead,
+		summary.FilesEdited,
+		summary.DiscoveryTokens,
+	)
 	if err != nil {
 		return err
 	}

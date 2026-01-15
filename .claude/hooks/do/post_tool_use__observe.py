@@ -89,6 +89,37 @@ def send_to_worker(session_id: str, obs_type: str, content: str,
     except:
         pass  # 실패해도 무시
 
+
+def send_plan_to_worker(session_id: str, file_path: str, plan_content: str):
+    """Worker에 플랜 저장 (plans 테이블)"""
+    try:
+        # 파일명에서 제목 추출 (예: 20260116-feature-name.md → feature-name)
+        import os.path
+        filename = os.path.basename(file_path)
+        title = filename.rsplit('.', 1)[0]  # 확장자 제거
+        # 타임스탬프 제거 (yyyymmdd-hhmmss. 또는 kebab-case-name)
+        parts = title.split('-', 2)
+        if len(parts) >= 3 and parts[0].isdigit():
+            title = parts[2] if len(parts) > 2 else parts[1]
+
+        data = {
+            "session_id": session_id,
+            "title": title,
+            "content": plan_content[:10000],  # 10KB 제한
+            "status": "draft",
+            "file_path": file_path
+        }
+
+        req = urllib.request.Request(
+            f"{WORKER_URL}/api/plans",
+            data=json.dumps(data).encode('utf-8'),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except:
+        pass  # 실패해도 무시
+
 def main():
     hook_input = json.loads(sys.stdin.read())
 
@@ -101,6 +132,13 @@ def main():
 
     if obs_type and content:
         send_to_worker(session_id, obs_type, content, agent_name, importance, tags, result_preview)
+
+    # 플랜 파일 생성 시 plans 테이블에도 저장
+    if obs_type == "plan" and tool_name in ("Write", "Edit"):
+        file_path = tool_input.get("file_path", "")
+        plan_content = tool_input.get("content", "") or tool_input.get("new_string", "")
+        if file_path and plan_content:
+            send_plan_to_worker(session_id, file_path, plan_content)
 
     print(json.dumps({"continue": True}))
 
