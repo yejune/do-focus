@@ -190,17 +190,74 @@ def end_session_in_worker(session_id: str, project_path: str) -> bool:
         return False
 
 
-def request_summary_generation(session_id: str) -> bool:
+def get_last_assistant_message() -> str:
+    """Extract last assistant message from transcript file.
+
+    Returns:
+        Last assistant message or empty string
+    """
+    try:
+        session_id = os.environ.get("CLAUDE_SESSION_ID", "")
+        if not session_id:
+            return ""
+
+        # Find transcript file
+        home = Path.home()
+        project_path = str(find_project_root()).replace("/", "-")
+        if project_path.startswith("-"):
+            project_path = project_path[1:]
+
+        transcript_dir = home / ".claude" / "projects" / project_path
+        transcript_file = transcript_dir / f"{session_id}.jsonl"
+
+        if not transcript_file.exists():
+            return ""
+
+        # Read last assistant message (search from end)
+        last_message = ""
+        with open(transcript_file, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    entry = json.loads(line.strip())
+                    if entry.get("type") == "assistant" and entry.get("message"):
+                        msg = entry["message"]
+                        if isinstance(msg, dict):
+                            # Extract text from message content
+                            content = msg.get("content", [])
+                            texts = []
+                            for block in content:
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    texts.append(block.get("text", ""))
+                            if texts:
+                                last_message = "\n".join(texts)
+                        elif isinstance(msg, str):
+                            last_message = msg
+                except Exception:
+                    continue
+
+        return last_message[:50000] if last_message else ""  # Limit to 50KB
+
+    except Exception as e:
+        logger.warning(f"Failed to extract last assistant message: {e}")
+        return ""
+
+
+def request_summary_generation(session_id: str, last_message: str = "") -> bool:
     """Request session summary generation (Worker generates based on observations)
 
     Args:
         session_id: Session ID for summary generation
+        last_message: Last assistant message for summary context
 
     Returns:
         Success status
     """
     try:
-        data = json.dumps({"session_id": session_id}).encode("utf-8")
+        request_data = {
+            "session_id": session_id,
+            "last_assistant_message": last_message,
+        }
+        data = json.dumps(request_data).encode("utf-8")
 
         req = urllib.request.Request(
             f"{WORKER_URL}/api/summaries/generate",
@@ -209,7 +266,7 @@ def request_summary_generation(session_id: str) -> bool:
             method="POST",
         )
 
-        with urllib.request.urlopen(req, timeout=2) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:  # Increased timeout for larger payload
             if response.status in (200, 201, 202):
                 logger.info(f"Summary generation requested for session: {session_id}")
                 return True
@@ -918,9 +975,14 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
             if end_session_in_worker(session_id, project_path):
                 results["worker_notified"] = True
 
-            # Request summary generation (Worker generates based on observations)
-            if request_summary_generation(session_id):
+            # Extract last assistant message for summary generation
+            last_message = get_last_assistant_message()
+
+            # Request summary generation with last message for source storage
+            if request_summary_generation(session_id, last_message):
                 results["summary_requested"] = True
+                if last_message:
+                    results["source_message_size"] = len(last_message)
 
         # Record execution time
         execution_time = time.time() - start_time

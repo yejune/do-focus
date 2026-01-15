@@ -705,19 +705,36 @@ func (m *MySQL) CreateUserPrompt(ctx context.Context, prompt *models.UserPrompt)
 	return nil
 }
 
-// GetUserPrompts retrieves user prompts for a session.
+// GetUserPrompts retrieves user prompts for a session (or all if sessionID is empty).
 func (m *MySQL) GetUserPrompts(ctx context.Context, sessionID string, limit int) ([]models.UserPrompt, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `
-		SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
-		FROM user_prompts
-		WHERE session_id = ?
-		ORDER BY prompt_number ASC
-		LIMIT ?
-	`
-	rows, err := m.db.QueryContext(ctx, query, sessionID, limit)
+
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if sessionID == "" {
+		// Return all prompts (most recent first)
+		query = `
+			SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+			FROM user_prompts
+			ORDER BY created_at DESC
+			LIMIT ?
+		`
+		rows, err = m.db.QueryContext(ctx, query, limit)
+	} else {
+		// Return prompts for specific session
+		query = `
+			SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+			FROM user_prompts
+			WHERE session_id = ?
+			ORDER BY prompt_number ASC
+			LIMIT ?
+		`
+		rows, err = m.db.QueryContext(ctx, query, sessionID, limit)
+	}
 	if err != nil {
 		return nil, err
 	}

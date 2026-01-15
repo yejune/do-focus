@@ -6,6 +6,12 @@ interface SessionSummary {
   type: string
   content: string
   created_at: string
+  request?: string
+  investigated?: string
+  learned?: string
+  completed?: string
+  next_steps?: string
+  source_message?: string
 }
 
 export default function Reports() {
@@ -14,6 +20,7 @@ export default function Reports() {
   const [error, setError] = useState<string | null>(null)
   const [days, setDays] = useState(7)
   const [selectedSummary, setSelectedSummary] = useState<SessionSummary | null>(null)
+  const [showSource, setShowSource] = useState(false)
 
   useEffect(() => {
     async function loadSummaries() {
@@ -158,7 +165,7 @@ export default function Reports() {
       {/* Detail Modal */}
       {selectedSummary && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
             <div className="p-4 border-b flex items-center justify-between">
               <div>
                 <h3 className="font-semibold">Session Summary</h3>
@@ -167,7 +174,7 @@ export default function Reports() {
                 </p>
               </div>
               <button
-                onClick={() => setSelectedSummary(null)}
+                onClick={() => { setSelectedSummary(null); setShowSource(false); }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,19 +182,102 @@ export default function Reports() {
                 </svg>
               </button>
             </div>
-            <div className="p-4 overflow-y-auto flex-1">
-              <p className="text-xs text-gray-400 mb-2">
-                {new Date(selectedSummary.created_at).toLocaleString('ko-KR')}
-              </p>
-              <div className="prose prose-sm max-w-none">
-                <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
-                  {selectedSummary.content}
-                </pre>
+
+            {/* Tabs */}
+            <div className="border-b px-4">
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setShowSource(false)}
+                  className={`py-2 px-1 border-b-2 text-sm font-medium transition-colors ${
+                    !showSource
+                      ? 'border-primary-600 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  요약
+                </button>
+                <button
+                  onClick={() => setShowSource(true)}
+                  className={`py-2 px-1 border-b-2 text-sm font-medium transition-colors ${
+                    showSource
+                      ? 'border-primary-600 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  원본 응답
+                  {selectedSummary.source_message && (
+                    <span className="ml-1 text-xs text-gray-400">
+                      ({Math.round((selectedSummary.source_message?.length || 0) / 1000)}KB)
+                    </span>
+                  )}
+                </button>
               </div>
             </div>
+
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-xs text-gray-400 mb-3">
+                {new Date(selectedSummary.created_at).toLocaleString('ko-KR')}
+              </p>
+
+              {!showSource ? (
+                // 요약 탭
+                <div className="space-y-4">
+                  {selectedSummary.request && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">Request</h4>
+                      <p className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">{selectedSummary.request}</p>
+                    </div>
+                  )}
+                  {selectedSummary.completed && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">Completed</h4>
+                      <pre className="text-sm text-gray-600 bg-green-50 p-3 rounded-lg whitespace-pre-wrap">{selectedSummary.completed}</pre>
+                    </div>
+                  )}
+                  {selectedSummary.investigated && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">Investigated</h4>
+                      <pre className="text-sm text-gray-600 bg-yellow-50 p-3 rounded-lg whitespace-pre-wrap">{selectedSummary.investigated}</pre>
+                    </div>
+                  )}
+                  {selectedSummary.learned && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">Learned</h4>
+                      <pre className="text-sm text-gray-600 bg-purple-50 p-3 rounded-lg whitespace-pre-wrap">{selectedSummary.learned}</pre>
+                    </div>
+                  )}
+                  {selectedSummary.next_steps && (
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900 mb-1">Next Steps</h4>
+                      <pre className="text-sm text-gray-600 bg-orange-50 p-3 rounded-lg whitespace-pre-wrap">{selectedSummary.next_steps}</pre>
+                    </div>
+                  )}
+                  {/* Fallback to content if no structured fields */}
+                  {!selectedSummary.request && !selectedSummary.completed && (
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">
+                      {selectedSummary.content}
+                    </pre>
+                  )}
+                </div>
+              ) : (
+                // 원본 탭
+                <div>
+                  {selectedSummary.source_message ? (
+                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg font-mono">
+                      {selectedSummary.source_message}
+                    </pre>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400">
+                      원본 응답이 저장되지 않았습니다
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="p-4 border-t flex justify-end">
               <button
-                onClick={() => setSelectedSummary(null)}
+                onClick={() => { setSelectedSummary(null); setShowSource(false); }}
                 className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
               >
                 닫기
