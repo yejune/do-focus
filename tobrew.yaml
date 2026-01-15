@@ -10,23 +10,23 @@ github:
 build:
     command: |
         go build -ldflags "-X main.version={{.Version}}" -o build/godo ./cmd/godo/
-        cd .do/worker && go build -ldflags "-X main.version={{.Version}}" -o ../../build/do-worker ./cmd/worker/
+        cd .do/worker && go build -ldflags "-X main.version={{.Version}}" -o ../../build/godo-worker ./cmd/worker/
 assets:
     - build/godo
-    - build/do-worker
+    - build/godo-worker
 formula:
     install: |-
         system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "godo", "./cmd/godo/"
-        cd ".do/worker" do
-          system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "do-worker", "./cmd/worker/"
+        Dir.chdir(".do/worker") do
+          system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "../../godo-worker", "./cmd/worker/"
         end
         bin.install "godo"
-        bin.install ".do/worker/do-worker" => "do-worker"
+        bin.install "godo-worker"
     test: assert_match "godo version", shell_output("#{bin}/godo version")
     caveats: |-
         godo has been installed!
 
         Usage:
           cd my-project
-          godo init      # Install Do
-          godo update    # Update Do
+          godo sync             # Install or update Do
+          godo worker start     # Start memory worker

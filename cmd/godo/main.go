@@ -618,8 +618,13 @@ func runWorker() {
 }
 
 func getWorkerPath() string {
+	// First check if godo-worker is in PATH (installed via homebrew)
+	if path, err := exec.LookPath("godo-worker"); err == nil {
+		return path
+	}
+	// Fallback to ~/.do/bin/godo-worker
 	homeDir, _ := os.UserHomeDir()
-	return filepath.Join(homeDir, ".do", "bin", "do-worker")
+	return filepath.Join(homeDir, ".do", "bin", "godo-worker")
 }
 
 func isWorkerRunning() bool {
@@ -658,18 +663,10 @@ func workerStart() {
 
 	// Check if worker binary exists
 	if _, err := os.Stat(workerPath); os.IsNotExist(err) {
-		// Try to copy from local build
-		localWorker := ".do/bin/do-worker"
-		if _, err := os.Stat(localWorker); err == nil {
-			os.MkdirAll(filepath.Dir(workerPath), 0755)
-			if copyErr := copyFile(localWorker, workerPath); copyErr != nil {
-				fmt.Printf("Error: Failed to copy worker: %v\n", copyErr)
-				os.Exit(1)
-			}
-			os.Chmod(workerPath, 0755)
-		} else {
-			fmt.Println("Error: Worker binary not found")
-			fmt.Println("       Expected at: " + workerPath)
+		// Check if it's in PATH (homebrew install)
+		if _, err := exec.LookPath("godo-worker"); err != nil {
+			fmt.Println("Error: godo-worker not found")
+			fmt.Println("       Install with: brew upgrade godo")
 			os.Exit(1)
 		}
 	}
