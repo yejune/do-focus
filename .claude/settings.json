@@ -95,6 +95,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/do/user_prompt_submit__record_conversation.py"
+          }
+        ]
+      }
     ]
   }
 }
