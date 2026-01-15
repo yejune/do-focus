@@ -16,8 +16,12 @@ assets:
     - build/do-worker
 formula:
     install: |-
+        system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "godo", "./cmd/godo/"
+        cd ".do/worker" do
+          system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "do-worker", "./cmd/worker/"
+        end
         bin.install "godo"
-        bin.install "do-worker"
+        bin.install ".do/worker/do-worker" => "do-worker"
     test: assert_match "godo version", shell_output("#{bin}/godo version")
     caveats: |-
         godo has been installed!

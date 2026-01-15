@@ -31,6 +31,8 @@ func main() {
 	switch os.Args[1] {
 	case "sync":
 		runSync()
+	case "worker":
+		runWorker()
 	case "selfupdate", "self-update":
 		runSelfUpdate()
 	case "capture":
@@ -50,15 +52,19 @@ func printUsage() {
 	fmt.Println(`godo - Do CLI installer
 
 Usage:
-  godo sync           Install or update Do
-  godo selfupdate     Update godo itself
-  godo capture        Capture terminal buffer to file
-  godo version        Show version
-  godo help           Show this help
+  godo sync             Install or update Do
+  godo worker start     Start the memory worker
+  godo worker stop      Stop the memory worker
+  godo worker status    Show worker status
+  godo selfupdate       Update godo itself
+  godo capture          Capture terminal buffer to file
+  godo version          Show version
+  godo help             Show this help
 
 Examples:
   cd my-project
   godo sync                              # Install or update Do
+  godo worker start                      # Start memory worker
   godo selfupdate                        # Update godo CLI
   godo capture --output terminal.txt     # Capture terminal buffer`)
 }
@@ -239,12 +245,7 @@ func runSync() {
 		fmt.Printf("Warning: Failed to register project: %v\n", err)
 	}
 
-	// 3. Worker 실행 확인
-	if err := ensureWorkerRunning(); err != nil {
-		fmt.Printf("Warning: Failed to ensure worker: %v\n", err)
-	}
-
-	// 4. 기존 sync 로직 (hooks 복사 등)
+	// 3. 기존 sync 로직 (hooks 복사 등)
 	if isInstalled() {
 		// Already installed - run update
 		fmt.Println("업데이트 중...")
@@ -595,40 +596,142 @@ func registerProject(projectPath string) error {
 	return os.WriteFile(projectsPath, newData, 0644)
 }
 
-// ensureWorkerRunning은 Worker가 실행 중인지 확인하고, 아니면 시작합니다
-func ensureWorkerRunning() error {
-	// 헬스체크
+// runWorker handles worker subcommands: start, stop, status
+func runWorker() {
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: godo worker [start|stop|status]")
+		os.Exit(1)
+	}
+
+	switch os.Args[2] {
+	case "start", "restart":
+		workerStart()
+	case "stop":
+		workerStop()
+	case "status":
+		workerStatus()
+	default:
+		fmt.Printf("Unknown worker command: %s\n", os.Args[2])
+		fmt.Println("Usage: godo worker [start|stop|status]")
+		os.Exit(1)
+	}
+}
+
+func getWorkerPath() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".do", "bin", "do-worker")
+}
+
+func isWorkerRunning() bool {
 	resp, err := http.Get("http://127.0.0.1:3778/health")
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == 200 {
-			return nil // 이미 실행 중
-		}
-	}
-
-	// Worker 시작
-	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return false
 	}
-	workerPath := filepath.Join(homeDir, ".do", "bin", "do-worker")
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
 
+func getWorkerPID() int {
+	// Find worker process by port
+	cmd := exec.Command("lsof", "-ti", ":3778")
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	pid := strings.TrimSpace(string(out))
+	if pid == "" {
+		return 0
+	}
+	var p int
+	fmt.Sscanf(pid, "%d", &p)
+	return p
+}
+
+func workerStart() {
+	// Kill existing if running (for restart)
+	if pid := getWorkerPID(); pid > 0 {
+		exec.Command("kill", fmt.Sprintf("%d", pid)).Run()
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	workerPath := getWorkerPath()
+
+	// Check if worker binary exists
 	if _, err := os.Stat(workerPath); os.IsNotExist(err) {
-		// 로컬 빌드에서 복사
-		localWorker := ".do/worker/bin/do-worker"
+		// Try to copy from local build
+		localWorker := ".do/bin/do-worker"
 		if _, err := os.Stat(localWorker); err == nil {
+			os.MkdirAll(filepath.Dir(workerPath), 0755)
 			if copyErr := copyFile(localWorker, workerPath); copyErr != nil {
-				return copyErr
+				fmt.Printf("Error: Failed to copy worker: %v\n", copyErr)
+				os.Exit(1)
 			}
 			os.Chmod(workerPath, 0755)
+		} else {
+			fmt.Println("Error: Worker binary not found")
+			fmt.Println("       Expected at: " + workerPath)
+			os.Exit(1)
 		}
 	}
 
-	if _, err := os.Stat(workerPath); err == nil {
-		cmd := exec.Command(workerPath)
-		cmd.Start() // 백그라운드 실행
+	// Start worker
+	cmd := exec.Command(workerPath)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error: Failed to start worker: %v\n", err)
+		os.Exit(1)
 	}
 
-	return nil
+	// Wait for startup
+	time.Sleep(500 * time.Millisecond)
+
+	if isWorkerRunning() {
+		fmt.Println("✓ Worker started (PID: " + fmt.Sprintf("%d", cmd.Process.Pid) + ")")
+		fmt.Println("  http://127.0.0.1:3778")
+	} else {
+		fmt.Println("Warning: Worker may not have started correctly")
+	}
+}
+
+func workerStop() {
+	pid := getWorkerPID()
+	if pid == 0 {
+		fmt.Println("Worker is not running")
+		return
+	}
+
+	if err := exec.Command("kill", fmt.Sprintf("%d", pid)).Run(); err != nil {
+		fmt.Printf("Error: Failed to stop worker: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Worker stopped (PID: %d)\n", pid)
+}
+
+func workerStatus() {
+	if isWorkerRunning() {
+		pid := getWorkerPID()
+		fmt.Printf("✓ Worker is running (PID: %d)\n", pid)
+		fmt.Println("  http://127.0.0.1:3778")
+
+		// Get health details
+		resp, err := http.Get("http://127.0.0.1:3778/health")
+		if err == nil {
+			defer resp.Body.Close()
+			var health map[string]interface{}
+			if json.NewDecoder(resp.Body).Decode(&health) == nil {
+				if v, ok := health["version"]; ok {
+					fmt.Printf("  Version: %v\n", v)
+				}
+				if v, ok := health["db_type"]; ok {
+					fmt.Printf("  DB: %v\n", v)
+				}
+			}
+		}
+	} else {
+		fmt.Println("✗ Worker is not running")
+		fmt.Println("  Start with: godo worker start")
+	}
 }
 
