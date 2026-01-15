@@ -13,17 +13,17 @@ WORKER_PORT = int(os.environ.get("DO_WORKER_PORT", "3778"))
 WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
 
 
-def send_to_worker(session_id: str, content: str):
-    """Worker에 대화 전송"""
+def send_to_worker(session_id: str, content: str, prompt_number: int = 1):
+    """Worker에 대화 전송 (observations + user_prompts 둘 다)"""
+    # 1. observations 저장 (기존)
     try:
         data = {
             "session_id": session_id,
             "type": "conversation",
-            "content": content[:2000],  # 2000자 제한
+            "content": content[:2000],
             "importance": 3,
             "tags": ["user", "prompt"]
         }
-
         req = urllib.request.Request(
             f"{WORKER_URL}/api/observations",
             data=json.dumps(data).encode('utf-8'),
@@ -32,7 +32,26 @@ def send_to_worker(session_id: str, content: str):
         )
         urllib.request.urlopen(req, timeout=2)
     except Exception:
-        pass  # 실패해도 무시 (대화 진행에 영향 없음)
+        pass
+
+    # 2. user_prompts 저장 (신규)
+    try:
+        import time
+        data = {
+            "session_id": session_id,
+            "prompt_number": prompt_number,
+            "prompt_text": content[:5000],  # 5000자 제한
+            "created_at_epoch": int(time.time())
+        }
+        req = urllib.request.Request(
+            f"{WORKER_URL}/api/prompts",
+            data=json.dumps(data).encode('utf-8'),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass
 
 
 def main():
