@@ -182,7 +182,9 @@ export default function UserPrompts() {
                   응답
                   {selectedPrompt.response && (
                     <span className="text-xs text-gray-400">
-                      ({Math.round((selectedPrompt.response?.length || 0) / 1000)}KB)
+                      ({selectedPrompt.response.length < 1000
+                        ? `${selectedPrompt.response.length}B`
+                        : `${Math.round(selectedPrompt.response.length / 1000)}KB`})
                     </span>
                   )}
                 </h4>
