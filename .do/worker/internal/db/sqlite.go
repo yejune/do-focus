@@ -205,80 +205,6 @@ func (s *SQLite) runMigrations() error {
 		_, _ = s.db.Exec(col)
 	}
 
-	// Migration 008: Create FTS5 virtual tables for full-text search
-	// Note: FTS5 content tables use content sync - manual sync via triggers
-	_, _ = s.db.Exec(`
-		CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
-			title, subtitle, narrative, content, facts, concepts,
-			content='observations', content_rowid='id'
-		)
-	`)
-
-	_, _ = s.db.Exec(`
-		CREATE VIRTUAL TABLE IF NOT EXISTS user_prompts_fts USING fts5(
-			prompt_text,
-			content='user_prompts', content_rowid='id'
-		)
-	`)
-
-	// Migration 009: Create FTS5 sync triggers for observations
-	// After INSERT trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS observations_ai AFTER INSERT ON observations BEGIN
-			INSERT INTO observations_fts(rowid, title, subtitle, narrative, content, facts, concepts)
-			VALUES (NEW.id, NEW.title, NEW.subtitle, NEW.narrative, NEW.content, NEW.facts, NEW.concepts);
-		END
-	`)
-
-	// After DELETE trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
-			INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, content, facts, concepts)
-			VALUES ('delete', OLD.id, OLD.title, OLD.subtitle, OLD.narrative, OLD.content, OLD.facts, OLD.concepts);
-		END
-	`)
-
-	// After UPDATE trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
-			INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, content, facts, concepts)
-			VALUES ('delete', OLD.id, OLD.title, OLD.subtitle, OLD.narrative, OLD.content, OLD.facts, OLD.concepts);
-			INSERT INTO observations_fts(rowid, title, subtitle, narrative, content, facts, concepts)
-			VALUES (NEW.id, NEW.title, NEW.subtitle, NEW.narrative, NEW.content, NEW.facts, NEW.concepts);
-		END
-	`)
-
-	// Migration 010: Create FTS5 sync triggers for user_prompts
-	// After INSERT trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS user_prompts_ai AFTER INSERT ON user_prompts BEGIN
-			INSERT INTO user_prompts_fts(rowid, prompt_text)
-			VALUES (NEW.id, NEW.prompt_text);
-		END
-	`)
-
-	// After DELETE trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS user_prompts_ad AFTER DELETE ON user_prompts BEGIN
-			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, prompt_text)
-			VALUES ('delete', OLD.id, OLD.prompt_text);
-		END
-	`)
-
-	// After UPDATE trigger
-	_, _ = s.db.Exec(`
-		CREATE TRIGGER IF NOT EXISTS user_prompts_au AFTER UPDATE ON user_prompts BEGIN
-			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, prompt_text)
-			VALUES ('delete', OLD.id, OLD.prompt_text);
-			INSERT INTO user_prompts_fts(rowid, prompt_text)
-			VALUES (NEW.id, NEW.prompt_text);
-		END
-	`)
-
-	// Rebuild FTS indexes for existing data (idempotent)
-	_, _ = s.db.Exec(`INSERT INTO observations_fts(observations_fts) VALUES ('rebuild')`)
-	_, _ = s.db.Exec(`INSERT INTO user_prompts_fts(user_prompts_fts) VALUES ('rebuild')`)
-
 	return nil
 }
 
@@ -803,73 +729,37 @@ func (s *SQLite) GetUserPrompts(ctx context.Context, sessionID string, limit int
 
 // SearchFTS performs full-text search across observations and user_prompts using FTS5.
 func (s *SQLite) SearchFTS(ctx context.Context, query string, types []string, limit int) ([]models.SearchResult, error) {
+	// FTS5 disabled - Go sqlite3 driver doesn't support FTS5 by default
+	// Use simple LIKE search instead
 	if limit <= 0 {
 		limit = 50
 	}
 
 	var results []models.SearchResult
+	likeQuery := "%" + query + "%"
 
-	// Determine which types to search
-	searchObservations := len(types) == 0
-	searchPrompts := len(types) == 0
-	for _, t := range types {
-		if t == "observation" {
-			searchObservations = true
-		}
-		if t == "prompt" {
-			searchPrompts = true
-		}
-	}
-
-	// Search observations using FTS5
-	if searchObservations {
-		obsQuery := `
-			SELECT o.id, o.session_id, o.content, o.created_at,
-			       snippet(observations_fts, 3, '<mark>', '</mark>', '...', 32) as snippet,
-			       bm25(observations_fts) as rank
-			FROM observations_fts
-			JOIN observations o ON observations_fts.rowid = o.id
-			WHERE observations_fts MATCH ?
-			ORDER BY rank
-			LIMIT ?
-		`
-		rows, err := s.db.QueryContext(ctx, obsQuery, query, limit)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var r models.SearchResult
-				r.Type = "observation"
-				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt, &r.Snippet, &r.Rank); err != nil {
-					continue
-				}
-				results = append(results, r)
+	// Search observations using LIKE
+	obsQuery := `
+		SELECT id, session_id, content, created_at
+		FROM observations
+		WHERE content LIKE ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, obsQuery, likeQuery, limit)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var r models.SearchResult
+			r.Type = "observation"
+			if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt); err != nil {
+				continue
 			}
-		}
-	}
-
-	// Search user_prompts using FTS5
-	if searchPrompts {
-		promptQuery := `
-			SELECT p.id, p.session_id, p.prompt_text, p.created_at,
-			       snippet(user_prompts_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
-			       bm25(user_prompts_fts) as rank
-			FROM user_prompts_fts
-			JOIN user_prompts p ON user_prompts_fts.rowid = p.id
-			WHERE user_prompts_fts MATCH ?
-			ORDER BY rank
-			LIMIT ?
-		`
-		rows, err := s.db.QueryContext(ctx, promptQuery, query, limit)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var r models.SearchResult
-				r.Type = "prompt"
-				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt, &r.Snippet, &r.Rank); err != nil {
-					continue
-				}
-				results = append(results, r)
+			r.Snippet = r.Content
+			if len(r.Snippet) > 100 {
+				r.Snippet = r.Snippet[:100] + "..."
 			}
+			results = append(results, r)
 		}
 	}
 
