@@ -128,6 +128,27 @@ WORKER_PORT = int(os.environ.get("DO_WORKER_PORT", "3778"))
 WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
 
 
+def record_context_boundary(session_id: str, boundary_type: str):
+    """Record context start/end observation to Worker."""
+    try:
+        data = {
+            "session_id": session_id,
+            "type": "context_boundary",
+            "content": f"Context {boundary_type}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "importance": 5,
+            "tags": ["context", boundary_type]
+        }
+        req = urllib.request.Request(
+            f"{WORKER_URL}/api/observations",
+            data=json.dumps(data).encode('utf-8'),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass  # Don't block session end
+
+
 def end_session_in_worker(session_id: str, project_path: str) -> bool:
     """Notify Worker of session end
 
@@ -890,6 +911,9 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
 
         # P2: Worker communication for session tracking and summary generation
         if session_id:
+            # Record context_end observation
+            record_context_boundary(session_id, "end")
+
             # Notify Worker of session end
             if end_session_in_worker(session_id, project_path):
                 results["worker_notified"] = True

@@ -143,6 +143,28 @@ def get_user_name() -> str:
     return "user"
 
 
+def record_context_boundary(session_id: str, boundary_type: str):
+    """Record context start/end observation to Worker."""
+    try:
+        import time
+        data = {
+            "session_id": session_id,
+            "type": "context_boundary",
+            "content": f"Context {boundary_type}: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "importance": 5,
+            "tags": ["context", boundary_type]
+        }
+        req = urllib.request.Request(
+            f"{WORKER_URL}/api/observations",
+            data=json.dumps(data).encode('utf-8'),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except Exception:
+        pass  # Don't block session start
+
+
 def get_context_from_worker(session_id: str, project_path: str, user_name: str) -> str:
     """Fetch compressed context from Worker service.
 
@@ -193,6 +215,8 @@ def main():
     if ensure_worker_running():
         register_session(session_id, project_path, user_id)
         worker_context = get_context_from_worker(session_id, project_path, user_id)
+        # Record context_start observation
+        record_context_boundary(session_id, "start")
 
     # Base enforcement message
     base_message = """
