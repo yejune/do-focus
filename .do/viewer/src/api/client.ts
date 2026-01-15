@@ -18,7 +18,7 @@ export interface Session {
 export interface Observation {
   id: number
   session_id: string
-  timestamp: string
+  created_at: string
   type: string
   content: string
   metadata?: Record<string, unknown>

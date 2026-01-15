@@ -44,7 +44,7 @@ export default function Timeline({ items, loading }: TimelineProps) {
                 {item.type}
               </span>
               <span className="text-xs text-gray-500">
-                {formatTime(item.timestamp)}
+                {formatTime(item.created_at)}
               </span>
             </div>
             <p className="text-sm text-gray-700 whitespace-pre-wrap">
@@ -79,8 +79,8 @@ function getTypeBadge(type: string): string {
   return badges[type] || 'bg-gray-100 text-gray-700'
 }
 
-function formatTime(timestamp: string): string {
-  const date = new Date(timestamp)
+function formatTime(dateStr: string): string {
+  const date = new Date(dateStr)
   return date.toLocaleString('ko-KR', {
     month: 'short',
     day: 'numeric',

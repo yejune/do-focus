@@ -66,7 +66,7 @@ export default function Sessions() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-sm">
-                        {session.project_path?.split('/').slice(-2).join('/') || session.id || 'Unknown'}
+                        {session.project_id?.split('/').slice(-2).join('/') || session.id || 'Unknown'}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         {new Date(session.started_at).toLocaleString('ko-KR')}
@@ -109,7 +109,7 @@ export default function Sessions() {
                   <label className="text-xs text-gray-500 uppercase tracking-wide">
                     Project Path
                   </label>
-                  <p className="text-sm break-all">{selectedSession.project_path}</p>
+                  <p className="text-sm break-all">{selectedSession.project_id}</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 uppercase tracking-wide">
