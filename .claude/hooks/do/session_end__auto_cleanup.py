@@ -21,6 +21,7 @@ Features:
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,8 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import requests
 
 # Add module path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
@@ -118,6 +121,78 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+# Worker configuration
+WORKER_PORT = int(os.environ.get("DO_WORKER_PORT", "3778"))
+WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
+
+
+def end_session_in_worker(session_id: str, project_path: str) -> bool:
+    """Notify Worker of session end
+
+    Args:
+        session_id: Current session ID
+        project_path: Project path
+
+    Returns:
+        Success status
+    """
+    try:
+        response = requests.put(
+            f"{WORKER_URL}/api/sessions/{session_id}/end",
+            json={
+                "project_path": project_path,
+                "user_name": os.environ.get("DO_USER_NAME", ""),
+            },
+            timeout=2,
+        )
+        if response.status_code == 200:
+            logger.info(f"Session end notified to Worker: {session_id}")
+            return True
+        else:
+            logger.warning(f"Worker session end failed: {response.status_code}")
+            return False
+    except requests.exceptions.ConnectionError:
+        logger.debug("Worker not running, skipping session end notification")
+        return False
+    except requests.exceptions.Timeout:
+        logger.warning("Worker session end notification timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to notify Worker of session end: {e}")
+        return False
+
+
+def request_summary_generation(session_id: str) -> bool:
+    """Request session summary generation (Worker generates based on observations)
+
+    Args:
+        session_id: Session ID for summary generation
+
+    Returns:
+        Success status
+    """
+    try:
+        response = requests.post(
+            f"{WORKER_URL}/api/summaries/generate",
+            json={"session_id": session_id},
+            timeout=2,
+        )
+        if response.status_code in (200, 201, 202):
+            logger.info(f"Summary generation requested for session: {session_id}")
+            return True
+        else:
+            logger.warning(f"Worker summary generation failed: {response.status_code}")
+            return False
+    except requests.exceptions.ConnectionError:
+        logger.debug("Worker not running, skipping summary generation request")
+        return False
+    except requests.exceptions.Timeout:
+        logger.warning("Worker summary generation request timed out")
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to request summary generation: {e}")
+        return False
 
 
 def load_hook_timeout() -> int:
@@ -718,6 +793,10 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
     # Generate hook payload (simple version)
     payload = {"cwd": str(find_project_root())}
 
+    # Get session ID from environment
+    session_id = os.environ.get("CLAUDE_SESSION_ID", "")
+    project_path = str(find_project_root())
+
     results = {
         "hook": "session_end__auto_cleanup",
         "success": True,
@@ -728,6 +807,9 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
         "uncommitted_warning": None,
         "session_summary": "",
         "timestamp": datetime.now().isoformat(),
+        "session_id": session_id,
+        "worker_notified": False,
+        "summary_requested": False,
         "performance": {
             "git_manager_used": get_git_manager() is not None,
             "timeout_manager_used": get_timeout_manager() is not None,
@@ -794,6 +876,16 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
         # Add migration report to summary if violations exist
         if migration_report:
             results["migration_report"] = migration_report
+
+        # P2: Worker communication for session tracking and summary generation
+        if session_id:
+            # Notify Worker of session end
+            if end_session_in_worker(session_id, project_path):
+                results["worker_notified"] = True
+
+            # Request summary generation (Worker generates based on observations)
+            if request_summary_generation(session_id):
+                results["summary_requested"] = True
 
         # Record execution time
         execution_time = time.time() - start_time

@@ -8,11 +8,16 @@ github:
     repo: do-focus
     tap_repo: homebrew-tap
 build:
-    command: go build -ldflags "-X main.version={{.Version}}" -o build/{{.Name}} ./cmd/godo/
+    command: |
+        go build -ldflags "-X main.version={{.Version}}" -o build/godo ./cmd/godo/
+        cd .do/worker && go build -ldflags "-X main.version={{.Version}}" -o ../../build/do-worker ./cmd/worker/
+assets:
+    - build/godo
+    - build/do-worker
 formula:
     install: |-
-        system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "godo", "./cmd/godo/"
         bin.install "godo"
+        bin.install "do-worker"
     test: assert_match "godo version", shell_output("#{bin}/godo version")
     caveats: |-
         godo has been installed!

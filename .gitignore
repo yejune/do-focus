@@ -5,6 +5,11 @@
 # Session state (personal)
 .do/memory/
 
+# Do Memory DB
+.do/memory.db
+.do/memory.db-wal
+.do/memory.db-shm
+
 # Context save (personal notes)
 .do/context.md
 
@@ -32,3 +37,10 @@ node_modules/
 /godo
 /godo-*
 /build/
+
+# Worker build
+.do/worker/bin/
+.do/worker/do-worker
+
+# Viewer
+.do/viewer/dist/

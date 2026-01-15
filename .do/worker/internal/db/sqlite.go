@@ -1,0 +1,597 @@
+package db
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/do-focus/worker/pkg/models"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// SQLite implements the Adapter interface for SQLite.
+type SQLite struct {
+	db *sql.DB
+}
+
+// NewSQLite creates a new SQLite adapter.
+func NewSQLite(cfg Config) (*SQLite, error) {
+	path := cfg.Path
+	if path == "" {
+		path = ".do/memory.db"
+	}
+
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open sqlite: %w", err)
+	}
+
+	// Set connection pool settings
+	db.SetMaxOpenConns(1) // SQLite only supports one writer
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(time.Hour)
+
+	s := &SQLite{db: db}
+
+	// Initialize schema
+	if err := s.initSchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
+	return s, nil
+}
+
+// initSchema creates the database tables if they don't exist.
+func (s *SQLite) initSchema() error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS sessions (
+		id TEXT PRIMARY KEY,
+		user_name TEXT NOT NULL,
+		project_id TEXT,
+		started_at DATETIME NOT NULL,
+		ended_at DATETIME,
+		summary TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_sessions_user_name ON sessions(user_name);
+	CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
+	CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
+
+	CREATE TABLE IF NOT EXISTS observations (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT NOT NULL,
+		project_id TEXT,
+		agent_name TEXT,
+		type TEXT NOT NULL,
+		content TEXT NOT NULL,
+		importance INTEGER DEFAULT 3,
+		tags TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (session_id) REFERENCES sessions(id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_observations_session_id ON observations(session_id);
+	CREATE INDEX IF NOT EXISTS idx_observations_type ON observations(type);
+	CREATE INDEX IF NOT EXISTS idx_observations_importance ON observations(importance);
+	CREATE INDEX IF NOT EXISTS idx_observations_project_id ON observations(project_id);
+
+	CREATE TABLE IF NOT EXISTS summaries (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT,
+		project_id TEXT,
+		type TEXT NOT NULL,
+		content TEXT NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (session_id) REFERENCES sessions(id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_summaries_type ON summaries(type);
+	CREATE INDEX IF NOT EXISTS idx_summaries_project_id ON summaries(project_id);
+
+	CREATE TABLE IF NOT EXISTS plans (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		session_id TEXT,
+		project_id TEXT,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'draft',
+		file_path TEXT,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (session_id) REFERENCES sessions(id)
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status);
+	CREATE INDEX IF NOT EXISTS idx_plans_project_id ON plans(project_id);
+	`
+
+	_, err := s.db.Exec(schema)
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for existing databases
+	return s.runMigrations()
+}
+
+// runMigrations applies schema migrations for existing databases.
+func (s *SQLite) runMigrations() error {
+	// Migration 004: Add project_id column to existing tables
+	migrations := []string{
+		// Check and add project_id to sessions
+		`ALTER TABLE sessions ADD COLUMN project_id TEXT`,
+		// Check and add project_id to observations
+		`ALTER TABLE observations ADD COLUMN project_id TEXT`,
+		// Check and add project_id to summaries
+		`ALTER TABLE summaries ADD COLUMN project_id TEXT`,
+		// Check and add project_id to plans
+		`ALTER TABLE plans ADD COLUMN project_id TEXT`,
+	}
+
+	for _, migration := range migrations {
+		// SQLite will error if column already exists, which is fine
+		_, _ = s.db.Exec(migration)
+	}
+
+	// Migrate existing data: copy user_name to project_id where project_id is NULL
+	_, _ = s.db.Exec(`UPDATE sessions SET project_id = user_name WHERE project_id IS NULL OR project_id = ''`)
+
+	// Create indexes if they don't exist (already in schema, but ensure for migrated DBs)
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_observations_project_id ON observations(project_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_summaries_project_id ON summaries(project_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_plans_project_id ON plans(project_id)`,
+	}
+
+	for _, idx := range indexes {
+		if _, err := s.db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Health checks database connectivity.
+func (s *SQLite) Health(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
+// Close closes the database connection.
+func (s *SQLite) Close() error {
+	return s.db.Close()
+}
+
+// CreateSession creates a new session.
+func (s *SQLite) CreateSession(ctx context.Context, session *models.Session) error {
+	query := `
+		INSERT INTO sessions (id, user_name, started_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+	`
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, query, session.ID, session.UserName, session.StartedAt, now, now)
+	return err
+}
+
+// GetSession retrieves a session by ID.
+func (s *SQLite) GetSession(ctx context.Context, id string) (*models.Session, error) {
+	query := `SELECT id, user_name, started_at, ended_at, COALESCE(summary, ''), created_at, updated_at FROM sessions WHERE id = ?`
+	session := &models.Session{}
+	err := s.db.QueryRowContext(ctx, query, id).Scan(
+		&session.ID, &session.UserName, &session.StartedAt, &session.EndedAt,
+		&session.Summary, &session.CreatedAt, &session.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return session, err
+}
+
+// GetLatestSession retrieves the latest session for a user.
+func (s *SQLite) GetLatestSession(ctx context.Context, userName string) (*models.Session, error) {
+	query := `
+		SELECT id, user_name, started_at, ended_at, COALESCE(summary, ''), created_at, updated_at
+		FROM sessions
+		WHERE user_name = ?
+		ORDER BY started_at DESC
+		LIMIT 1
+	`
+	session := &models.Session{}
+	err := s.db.QueryRowContext(ctx, query, userName).Scan(
+		&session.ID, &session.UserName, &session.StartedAt, &session.EndedAt,
+		&session.Summary, &session.CreatedAt, &session.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return session, err
+}
+
+// EndSession ends a session with an optional summary.
+func (s *SQLite) EndSession(ctx context.Context, id string, summary string) error {
+	query := `UPDATE sessions SET ended_at = ?, summary = ?, updated_at = ? WHERE id = ?`
+	now := time.Now()
+	_, err := s.db.ExecContext(ctx, query, now, summary, now, id)
+	return err
+}
+
+// CreateObservation creates a new observation.
+func (s *SQLite) CreateObservation(ctx context.Context, obs *models.Observation) error {
+	query := `
+		INSERT INTO observations (session_id, agent_name, type, content, importance, tags, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	result, err := s.db.ExecContext(ctx, query, obs.SessionID, obs.AgentName, obs.Type, obs.Content, obs.Importance, obs.Tags, time.Now())
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err == nil {
+		obs.ID = id
+	}
+	return nil
+}
+
+// GetObservations retrieves observations for a session.
+func (s *SQLite) GetObservations(ctx context.Context, sessionID string) ([]models.Observation, error) {
+	query := `
+		SELECT id, session_id, COALESCE(agent_name, ''), type, content, importance, COALESCE(tags, ''), created_at
+		FROM observations
+		WHERE session_id = ?
+		ORDER BY created_at DESC
+	`
+	rows, err := s.db.QueryContext(ctx, query, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var observations []models.Observation
+	for rows.Next() {
+		var obs models.Observation
+		if err := rows.Scan(&obs.ID, &obs.SessionID, &obs.AgentName, &obs.Type, &obs.Content, &obs.Importance, &obs.Tags, &obs.CreatedAt); err != nil {
+			return nil, err
+		}
+		observations = append(observations, obs)
+	}
+	return observations, rows.Err()
+}
+
+// GetRecentObservations retrieves recent observations across sessions for a user.
+func (s *SQLite) GetRecentObservations(ctx context.Context, userName string, limit int) ([]models.Observation, error) {
+	query := `
+		SELECT o.id, o.session_id, COALESCE(o.agent_name, ''), o.type, o.content, o.importance, COALESCE(o.tags, ''), o.created_at
+		FROM observations o
+		JOIN sessions s ON o.session_id = s.id
+		WHERE s.user_name = ?
+		ORDER BY o.importance DESC, o.created_at DESC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, userName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var observations []models.Observation
+	for rows.Next() {
+		var obs models.Observation
+		if err := rows.Scan(&obs.ID, &obs.SessionID, &obs.AgentName, &obs.Type, &obs.Content, &obs.Importance, &obs.Tags, &obs.CreatedAt); err != nil {
+			return nil, err
+		}
+		observations = append(observations, obs)
+	}
+	return observations, rows.Err()
+}
+
+// GetObservationsFiltered retrieves observations with optional filters.
+func (s *SQLite) GetObservationsFiltered(ctx context.Context, sessionID string, obsType string, limit int) ([]models.Observation, error) {
+	query := `
+		SELECT id, session_id, COALESCE(agent_name, ''), type, content, importance, COALESCE(tags, ''), created_at
+		FROM observations
+		WHERE (? = '' OR session_id = ?) AND (? = '' OR type = ?)
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, query, sessionID, sessionID, obsType, obsType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var observations []models.Observation
+	for rows.Next() {
+		var obs models.Observation
+		if err := rows.Scan(&obs.ID, &obs.SessionID, &obs.AgentName, &obs.Type, &obs.Content, &obs.Importance, &obs.Tags, &obs.CreatedAt); err != nil {
+			return nil, err
+		}
+		observations = append(observations, obs)
+	}
+	return observations, rows.Err()
+}
+
+// SearchObservations searches observations by content.
+func (s *SQLite) SearchObservations(ctx context.Context, query string, limit int) ([]models.Observation, error) {
+	sqlQuery := `
+		SELECT id, session_id, COALESCE(agent_name, ''), type, content, importance, COALESCE(tags, ''), created_at
+		FROM observations
+		WHERE content LIKE ?
+		ORDER BY importance DESC, created_at DESC
+		LIMIT ?
+	`
+	if limit <= 0 {
+		limit = 50
+	}
+	searchPattern := "%" + query + "%"
+	rows, err := s.db.QueryContext(ctx, sqlQuery, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var observations []models.Observation
+	for rows.Next() {
+		var obs models.Observation
+		if err := rows.Scan(&obs.ID, &obs.SessionID, &obs.AgentName, &obs.Type, &obs.Content, &obs.Importance, &obs.Tags, &obs.CreatedAt); err != nil {
+			return nil, err
+		}
+		observations = append(observations, obs)
+	}
+	return observations, rows.Err()
+}
+
+// CreateSummary creates a new summary.
+func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) error {
+	query := `INSERT INTO summaries (session_id, type, content, created_at) VALUES (?, ?, ?, ?)`
+	result, err := s.db.ExecContext(ctx, query, summary.SessionID, summary.Type, summary.Content, time.Now())
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err == nil {
+		summary.ID = id
+	}
+	return nil
+}
+
+// GetSummaries retrieves summaries by type.
+func (s *SQLite) GetSummaries(ctx context.Context, summaryType string, limit int) ([]models.Summary, error) {
+	query := `
+		SELECT id, session_id, type, content, created_at
+		FROM summaries
+		WHERE type = ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, summaryType, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []models.Summary
+	for rows.Next() {
+		var sum models.Summary
+		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, sum)
+	}
+	return summaries, rows.Err()
+}
+
+// GetAllSummaries retrieves all summaries within a date range.
+func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]models.Summary, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		SELECT id, COALESCE(session_id, ''), type, content, created_at
+		FROM summaries
+		WHERE created_at >= datetime('now', ? || ' days')
+		ORDER BY created_at DESC
+		LIMIT ?
+	`
+	daysArg := fmt.Sprintf("-%d", days)
+	rows, err := s.db.QueryContext(ctx, query, daysArg, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var summaries []models.Summary
+	for rows.Next() {
+		var sum models.Summary
+		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt); err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, sum)
+	}
+	return summaries, rows.Err()
+}
+
+// CreatePlan creates a new plan.
+func (s *SQLite) CreatePlan(ctx context.Context, plan *models.Plan) error {
+	query := `
+		INSERT INTO plans (session_id, title, content, status, file_path, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`
+	now := time.Now()
+	result, err := s.db.ExecContext(ctx, query, plan.SessionID, plan.Title, plan.Content, "draft", plan.FilePath, now, now)
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err == nil {
+		plan.ID = id
+	}
+	return nil
+}
+
+// GetActivePlan retrieves the active plan for a user.
+func (s *SQLite) GetActivePlan(ctx context.Context, userName string) (*models.Plan, error) {
+	query := `
+		SELECT p.id, p.session_id, p.title, p.content, p.status, p.file_path, p.created_at, p.updated_at
+		FROM plans p
+		JOIN sessions s ON p.session_id = s.id
+		WHERE s.user_name = ? AND p.status = 'active'
+		ORDER BY p.updated_at DESC
+		LIMIT 1
+	`
+	plan := &models.Plan{}
+	err := s.db.QueryRowContext(ctx, query, userName).Scan(
+		&plan.ID, &plan.SessionID, &plan.Title, &plan.Content,
+		&plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return plan, err
+}
+
+// GetAllPlans retrieves all plans with optional session filter.
+func (s *SQLite) GetAllPlans(ctx context.Context, sessionID string, limit int) ([]models.Plan, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `
+		SELECT id, COALESCE(session_id, ''), title, content, status, COALESCE(file_path, ''), created_at, updated_at
+		FROM plans
+		WHERE ? = '' OR session_id = ?
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, sessionID, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var plans []models.Plan
+	for rows.Next() {
+		var plan models.Plan
+		if err := rows.Scan(&plan.ID, &plan.SessionID, &plan.Title, &plan.Content, &plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
+			return nil, err
+		}
+		plans = append(plans, plan)
+	}
+	return plans, rows.Err()
+}
+
+// UpdatePlanStatus updates a plan's status.
+func (s *SQLite) UpdatePlanStatus(ctx context.Context, id int64, status string) error {
+	query := `UPDATE plans SET status = ?, updated_at = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, status, time.Now(), id)
+	return err
+}
+
+// GetRecentSessions retrieves recent sessions.
+func (s *SQLite) GetRecentSessions(ctx context.Context, limit int) ([]models.Session, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	query := `
+		SELECT id, user_name, started_at, ended_at, COALESCE(summary, ''), created_at, updated_at
+		FROM sessions
+		ORDER BY started_at DESC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []models.Session
+	for rows.Next() {
+		var session models.Session
+		if err := rows.Scan(&session.ID, &session.UserName, &session.StartedAt, &session.EndedAt, &session.Summary, &session.CreatedAt, &session.UpdatedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	return sessions, rows.Err()
+}
+
+// GetTeamContext retrieves context from other team members.
+func (s *SQLite) GetTeamContext(ctx context.Context, excludeUser string) ([]models.TeamContext, error) {
+	query := `
+		SELECT
+			s.user_name,
+			MAX(s.started_at) as last_activity,
+			COALESCE(s.summary, '') as summary,
+			COALESCE(p.title, '') as active_plan
+		FROM sessions s
+		LEFT JOIN plans p ON p.session_id = s.id AND p.status = 'active'
+		WHERE s.user_name != ? AND s.ended_at IS NOT NULL
+		GROUP BY s.user_name
+		ORDER BY last_activity DESC
+		LIMIT 10
+	`
+	rows, err := s.db.QueryContext(ctx, query, excludeUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contexts []models.TeamContext
+	for rows.Next() {
+		var tc models.TeamContext
+		if err := rows.Scan(&tc.UserName, &tc.LastActivity, &tc.Summary, &tc.ActivePlan); err != nil {
+			return nil, err
+		}
+		contexts = append(contexts, tc)
+	}
+	return contexts, rows.Err()
+}
+
+// GetProjects retrieves all registered projects with session statistics.
+func (s *SQLite) GetProjects(ctx context.Context) ([]models.Project, error) {
+	query := `
+		SELECT
+			project_id,
+			project_id as path,
+			COUNT(*) as session_count,
+			MAX(started_at) as last_activity
+		FROM sessions
+		WHERE project_id IS NOT NULL AND project_id != ''
+		GROUP BY project_id
+		ORDER BY last_activity DESC
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []models.Project
+	for rows.Next() {
+		var p models.Project
+		if err := rows.Scan(&p.ID, &p.Path, &p.SessionCount, &p.LastActivity); err != nil {
+			return nil, err
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}
+
+// tagsToJSON converts a slice of strings to a JSON string.
+func tagsToJSON(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	data, _ := json.Marshal(tags)
+	return string(data)
+}

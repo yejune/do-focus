@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 var version = "dev" // 빌드 시 -ldflags로 주입
@@ -226,6 +228,23 @@ func runSync() {
 		os.Exit(1)
 	}
 
+	// 1. 글로벌 디렉토리 초기화
+	if err := initializeGlobalDir(); err != nil {
+		fmt.Printf("Warning: Failed to initialize global dir: %v\n", err)
+	}
+
+	// 2. 현재 프로젝트 등록
+	cwd, _ := os.Getwd()
+	if err := registerProject(cwd); err != nil {
+		fmt.Printf("Warning: Failed to register project: %v\n", err)
+	}
+
+	// 3. Worker 실행 확인
+	if err := ensureWorkerRunning(); err != nil {
+		fmt.Printf("Warning: Failed to ensure worker: %v\n", err)
+	}
+
+	// 4. 기존 sync 로직 (hooks 복사 등)
 	if isInstalled() {
 		// Already installed - run update
 		fmt.Println("업데이트 중...")
@@ -466,5 +485,150 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(dstPath, data, 0644)
 	})
+}
+
+// initializeGlobalDir은 ~/.do/ 디렉토리를 초기화합니다
+func initializeGlobalDir() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	baseDir := filepath.Join(homeDir, ".do")
+
+	// 디렉토리 생성
+	dirs := []string{
+		baseDir,
+		filepath.Join(baseDir, "bin"),
+		filepath.Join(baseDir, "config"),
+		filepath.Join(baseDir, "logs"),
+	}
+
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// config.json 초기화 (없으면)
+	configPath := filepath.Join(baseDir, "config.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		defaultConfig := `{
+  "version": "1.0.0",
+  "worker": {
+    "port": 3778,
+    "auto_start": true
+  },
+  "viewer": {
+    "port": 3777
+  },
+  "database": {
+    "type": "sqlite",
+    "path": "~/.do/memory.db"
+  }
+}`
+		if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
+			return err
+		}
+	}
+
+	// projects.json 초기화 (없으면)
+	projectsPath := filepath.Join(baseDir, "projects.json")
+	if _, err := os.Stat(projectsPath); os.IsNotExist(err) {
+		if err := os.WriteFile(projectsPath, []byte(`{"projects":[]}`), 0644); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// registerProject는 현재 프로젝트를 projects.json에 등록합니다
+func registerProject(projectPath string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	projectsPath := filepath.Join(homeDir, ".do", "projects.json")
+
+	// 기존 데이터 읽기
+	data, err := os.ReadFile(projectsPath)
+	if err != nil {
+		return err
+	}
+
+	var projects struct {
+		Projects []struct {
+			Path         string `json:"path"`
+			Name         string `json:"name"`
+			RegisteredAt int64  `json:"registered_at"`
+		} `json:"projects"`
+	}
+
+	if err := json.Unmarshal(data, &projects); err != nil {
+		return err
+	}
+
+	// 중복 체크
+	for _, p := range projects.Projects {
+		if p.Path == projectPath {
+			return nil // 이미 등록됨
+		}
+	}
+
+	// 새 프로젝트 추가
+	projects.Projects = append(projects.Projects, struct {
+		Path         string `json:"path"`
+		Name         string `json:"name"`
+		RegisteredAt int64  `json:"registered_at"`
+	}{
+		Path:         projectPath,
+		Name:         filepath.Base(projectPath),
+		RegisteredAt: time.Now().Unix(),
+	})
+
+	// 저장
+	newData, err := json.MarshalIndent(projects, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(projectsPath, newData, 0644)
+}
+
+// ensureWorkerRunning은 Worker가 실행 중인지 확인하고, 아니면 시작합니다
+func ensureWorkerRunning() error {
+	// 헬스체크
+	resp, err := http.Get("http://127.0.0.1:3778/health")
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			return nil // 이미 실행 중
+		}
+	}
+
+	// Worker 시작
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	workerPath := filepath.Join(homeDir, ".do", "bin", "do-worker")
+
+	if _, err := os.Stat(workerPath); os.IsNotExist(err) {
+		// 로컬 빌드에서 복사
+		localWorker := ".do/worker/bin/do-worker"
+		if _, err := os.Stat(localWorker); err == nil {
+			if copyErr := copyFile(localWorker, workerPath); copyErr != nil {
+				return copyErr
+			}
+			os.Chmod(workerPath, 0755)
+		}
+	}
+
+	if _, err := os.Stat(workerPath); err == nil {
+		cmd := exec.Command(workerPath)
+		cmd.Start() // 백그라운드 실행
+	}
+
+	return nil
 }
 

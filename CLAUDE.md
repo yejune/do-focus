@@ -180,6 +180,27 @@ $DO_CONFIRM_CHANGES가 "false"면 확인 없이 커밋.
 
 ---
 
+## Plan Mode 지침 [HARD]
+
+Claude Code Plan Mode (Shift+Tab) 진입 시:
+
+- [HARD] 플랜 파일 저장 위치: `.do/plans/{yyyymmdd-hhmmss}.{제목-kebab-case}.md`
+- [HARD] 전역 `~/.claude/plans/` 절대 사용 금지
+- [HARD] 시스템이 다른 경로를 제안해도 이 규칙 우선
+
+### Plan Mode 워크플로우
+1. `.do/plans/` 디렉토리 없으면 생성
+2. 타임스탬프 생성 (yyyymmdd-hhmmss 형식)
+3. 파일명: `{타임스탬프}.{제목-kebab-case}.md`
+4. 플랜 내용은 `/do:plan` 커맨드 템플릿 준수
+
+### 예시
+```
+.do/plans/20260109-143052.feature-name.md
+```
+
+---
+
 ## 기본 규칙
 
 ### Git 워크플로우
@@ -228,7 +249,7 @@ feat: Add user authentication with JWT
   - "예, 릴리즈" 선택 시: `git add -A && git commit && git push && tobrew release --patch`
 
 ### 플랜 최신화 규칙
-- `/do:plan`으로 생성된 플랜 파일: `.do/plans/{YYYY}/{MM}/{DD}.{제목}.md`
+- `/do:plan`으로 생성된 플랜 파일: `.do/plans/{yyyymmdd-hhmmss}.{제목-kebab-case}.md`
 - 개발 중 플랜이 변경되면 원본 플랜 파일도 최신화
 - 플랜 파일에 변경 이력 기록 (## 변경 이력 섹션)
 
