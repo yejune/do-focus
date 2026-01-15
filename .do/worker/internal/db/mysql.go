@@ -693,6 +693,16 @@ func (m *MySQL) runMigrations() error {
 		m.db.Exec(`ALTER TABLE plans ADD COLUMN request_prompt TEXT`)
 	}
 
+	// Migration 011: Add response column to user_prompts table
+	var responseExists int
+	m.db.QueryRow(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_prompts' AND COLUMN_NAME = 'response'
+	`).Scan(&responseExists)
+	if responseExists == 0 {
+		m.db.Exec(`ALTER TABLE user_prompts ADD COLUMN response LONGTEXT`)
+	}
+
 	return nil
 }
 
@@ -765,7 +775,7 @@ func (m *MySQL) GetUserPrompts(ctx context.Context, sessionID string, limit int)
 	if sessionID == "" {
 		// Return all prompts (most recent first)
 		query = `
-			SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+			SELECT id, session_id, prompt_number, prompt_text, COALESCE(response, ''), created_at, created_at_epoch
 			FROM user_prompts
 			ORDER BY created_at DESC
 			LIMIT ?
@@ -774,7 +784,7 @@ func (m *MySQL) GetUserPrompts(ctx context.Context, sessionID string, limit int)
 	} else {
 		// Return prompts for specific session
 		query = `
-			SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+			SELECT id, session_id, prompt_number, prompt_text, COALESCE(response, ''), created_at, created_at_epoch
 			FROM user_prompts
 			WHERE session_id = ?
 			ORDER BY prompt_number ASC
@@ -790,12 +800,30 @@ func (m *MySQL) GetUserPrompts(ctx context.Context, sessionID string, limit int)
 	var prompts []models.UserPrompt
 	for rows.Next() {
 		var p models.UserPrompt
-		if err := rows.Scan(&p.ID, &p.SessionID, &p.PromptNumber, &p.PromptText, &p.CreatedAt, &p.CreatedAtEpoch); err != nil {
+		if err := rows.Scan(&p.ID, &p.SessionID, &p.PromptNumber, &p.PromptText, &p.Response, &p.CreatedAt, &p.CreatedAtEpoch); err != nil {
 			return nil, err
 		}
 		prompts = append(prompts, p)
 	}
 	return prompts, rows.Err()
+}
+
+// UpdateLatestPromptResponse updates the response for the latest prompt in a session.
+func (m *MySQL) UpdateLatestPromptResponse(ctx context.Context, sessionID string, response string) error {
+	query := `
+		UPDATE user_prompts
+		SET response = ?
+		WHERE id = (
+			SELECT id FROM (
+				SELECT id FROM user_prompts
+				WHERE session_id = ?
+				ORDER BY created_at DESC
+				LIMIT 1
+			) AS tmp
+		)
+	`
+	_, err := m.db.ExecContext(ctx, query, response, sessionID)
+	return err
 }
 
 // SearchFTS performs full-text search across observations and user_prompts.

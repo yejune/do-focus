@@ -83,6 +83,77 @@ def get_last_assistant_message(transcript_path: str) -> str:
     return ""
 
 
+def get_last_response_with_tools(transcript_path: str) -> str:
+    """Get the last assistant response including tool_use blocks.
+
+    Returns:
+        Full response with tool_use info (max 100KB)
+    """
+    if not transcript_path or not Path(transcript_path).exists():
+        return ""
+
+    last_response = ""
+    try:
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("type") == "assistant":
+                        message = entry.get("message", {})
+                        content = message.get("content", [])
+                        parts = []
+
+                        if isinstance(content, list):
+                            for item in content:
+                                if item.get("type") == "text":
+                                    text = strip_system_reminders(item.get("text", ""))
+                                    if text.strip():
+                                        parts.append(text)
+                                elif item.get("type") == "tool_use":
+                                    tool_name = item.get("name", "unknown")
+                                    tool_input = item.get("input", {})
+                                    input_str = json.dumps(tool_input, ensure_ascii=False)
+                                    if len(input_str) > 500:
+                                        input_str = input_str[:500] + "..."
+                                    parts.append(f"\n[Tool: {tool_name}]\n{input_str}")
+
+                        if parts:
+                            last_response = "\n".join(parts)
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        pass
+
+    return last_response[:100000] if last_response else ""
+
+
+def update_prompt_response(session_id: str, response: str) -> bool:
+    """Update the latest user_prompt with the assistant response."""
+    if not response or not session_id:
+        return False
+
+    try:
+        data = json.dumps({
+            "session_id": session_id,
+            "response": response
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            f"{WORKER_URL}/api/prompts/latest/response",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="PUT"
+        )
+
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def request_summary_generation(session_id: str, transcript_path: str) -> bool:
     """Request Worker to generate session summary"""
     last_message = get_last_assistant_message(transcript_path)
@@ -122,7 +193,15 @@ def main():
     transcript_path = hook_input.get("transcript_path", "")
 
     summary_requested = False
+    response_saved = False
+
     if session_id:
+        # 1. Save assistant response to user_prompts
+        response = get_last_response_with_tools(transcript_path)
+        if response:
+            response_saved = update_prompt_response(session_id, response)
+
+        # 2. Request summary generation (existing)
         summary_requested = request_summary_generation(session_id, transcript_path)
 
     # Stop hook은 차단하지 않음

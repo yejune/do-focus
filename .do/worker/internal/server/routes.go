@@ -47,6 +47,7 @@ func (s *Server) setupRoutes() {
 		// User Prompts
 		api.GET("/prompts", s.handleGetUserPrompts)
 		api.POST("/prompts", s.handleCreateUserPrompt)
+		api.PUT("/prompts/latest/response", s.handleUpdateLatestPromptResponse)
 
 		// FTS5 Search
 		api.GET("/search", s.handleSearch)
@@ -1338,6 +1339,39 @@ func (s *Server) handleCreateUserPrompt(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, prompt)
+}
+
+// handleUpdateLatestPromptResponse updates the response for the latest prompt in a session.
+func (s *Server) handleUpdateLatestPromptResponse(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req struct {
+		SessionID string `json:"session_id" binding:"required"`
+		Response  string `json:"response" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Truncate response to 100KB
+	response := req.Response
+	if len(response) > 100000 {
+		response = response[:100000] + "\n...(truncated)"
+	}
+
+	if err := s.db.UpdateLatestPromptResponse(ctx, req.SessionID, response); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "updated"})
 }
 
 // handleSearch handles FTS5 full-text search across multiple types.

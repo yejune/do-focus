@@ -52,6 +52,7 @@ type Adapter interface {
 	// UserPrompt operations
 	CreateUserPrompt(ctx context.Context, prompt *models.UserPrompt) error
 	GetUserPrompts(ctx context.Context, sessionID string, limit int) ([]models.UserPrompt, error)
+	UpdateLatestPromptResponse(ctx context.Context, sessionID string, response string) error
 
 	// FTS5 Search operations
 	SearchFTS(ctx context.Context, query string, types []string, limit int) ([]models.SearchResult, error)

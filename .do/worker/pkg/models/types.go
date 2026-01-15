@@ -68,6 +68,7 @@ type UserPrompt struct {
 	SessionID      string    `json:"session_id" db:"session_id"`
 	PromptNumber   int       `json:"prompt_number" db:"prompt_number"`
 	PromptText     string    `json:"prompt_text" db:"prompt_text"`
+	Response       string    `json:"response,omitempty" db:"response"` // Assistant response with tool_use
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	CreatedAtEpoch int64     `json:"created_at_epoch" db:"created_at_epoch"`
 }
