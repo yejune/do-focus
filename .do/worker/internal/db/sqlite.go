@@ -476,7 +476,9 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 		limit = 100
 	}
 	query := `
-		SELECT id, COALESCE(session_id, ''), type, content, created_at
+		SELECT id, COALESCE(session_id, ''), type, content, created_at,
+			COALESCE(request, ''), COALESCE(investigated, ''), COALESCE(learned, ''),
+			COALESCE(completed, ''), COALESCE(next_steps, ''), COALESCE(source_message, '')
 		FROM summaries
 		WHERE created_at >= datetime('now', ? || ' days')
 		ORDER BY created_at DESC
@@ -492,8 +494,28 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 	var summaries []models.Summary
 	for rows.Next() {
 		var sum models.Summary
-		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt); err != nil {
+		var request, investigated, learned, completed, nextSteps, sourceMessage string
+		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt,
+			&request, &investigated, &learned, &completed, &nextSteps, &sourceMessage); err != nil {
 			return nil, err
+		}
+		if request != "" {
+			sum.Request = &request
+		}
+		if investigated != "" {
+			sum.Investigated = &investigated
+		}
+		if learned != "" {
+			sum.Learned = &learned
+		}
+		if completed != "" {
+			sum.Completed = &completed
+		}
+		if nextSteps != "" {
+			sum.NextSteps = &nextSteps
+		}
+		if sourceMessage != "" {
+			sum.SourceMessage = sourceMessage
 		}
 		summaries = append(summaries, sum)
 	}
