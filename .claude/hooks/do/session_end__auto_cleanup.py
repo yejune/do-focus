@@ -997,6 +997,24 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
         return results, ""
 
 
+def log_stdin_data():
+    """Log stdin data for debugging hook input schema."""
+    try:
+        raw = sys.stdin.read()
+        if raw.strip():
+            # Save to debug file
+            debug_dir = Path.home() / ".do" / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            debug_file = debug_dir / f"session_end_stdin_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            with open(debug_file, "w", encoding="utf-8") as f:
+                f.write(raw)
+            logger.info(f"Stdin data saved to: {debug_file}")
+            return json.loads(raw)
+    except Exception as e:
+        logger.warning(f"Failed to log stdin: {e}")
+    return {}
+
+
 def main() -> None:
     """Main function
 
@@ -1012,6 +1030,8 @@ def main() -> None:
     Returns:
         None
     """
+    # Log stdin data for debugging
+    stdin_data = log_stdin_data()
     # Configure timeout for session end hook
     timeout_config = HookTimeoutConfig(
         policy=TimeoutPolicy.NORMAL,
