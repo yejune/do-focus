@@ -13,7 +13,11 @@
 # Context save (personal notes)
 .do/context.md
 
-# Claude Code local settings
+# Claude Code - force include (override global gitignore)
+!.claude/
+!.claude/**
+
+# Claude Code local settings (personal, excluded)
 .claude/settings.local.json
 
 # Python
