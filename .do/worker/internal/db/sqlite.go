@@ -171,20 +171,20 @@ func (s *SQLite) Close() error {
 // CreateSession creates a new session.
 func (s *SQLite) CreateSession(ctx context.Context, session *models.Session) error {
 	query := `
-		INSERT INTO sessions (id, user_name, started_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO sessions (id, user_name, project_id, started_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 	`
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, query, session.ID, session.UserName, session.StartedAt, now, now)
+	_, err := s.db.ExecContext(ctx, query, session.ID, session.UserName, session.ProjectID, session.StartedAt, now, now)
 	return err
 }
 
 // GetSession retrieves a session by ID.
 func (s *SQLite) GetSession(ctx context.Context, id string) (*models.Session, error) {
-	query := `SELECT id, user_name, started_at, ended_at, COALESCE(summary, ''), created_at, updated_at FROM sessions WHERE id = ?`
+	query := `SELECT id, user_name, COALESCE(project_id, ''), started_at, ended_at, COALESCE(summary, ''), created_at, updated_at FROM sessions WHERE id = ?`
 	session := &models.Session{}
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&session.ID, &session.UserName, &session.StartedAt, &session.EndedAt,
+		&session.ID, &session.UserName, &session.ProjectID, &session.StartedAt, &session.EndedAt,
 		&session.Summary, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {

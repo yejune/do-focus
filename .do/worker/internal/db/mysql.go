@@ -134,19 +134,19 @@ func (m *MySQL) Close() error {
 // CreateSession creates a new session.
 func (m *MySQL) CreateSession(ctx context.Context, session *models.Session) error {
 	query := `
-		INSERT INTO sessions (id, user_name, started_at, created_at, updated_at)
-		VALUES (?, ?, ?, NOW(), NOW())
+		INSERT INTO sessions (id, user_name, project_id, started_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, NOW(), NOW())
 	`
-	_, err := m.db.ExecContext(ctx, query, session.ID, session.UserName, session.StartedAt)
+	_, err := m.db.ExecContext(ctx, query, session.ID, session.UserName, session.ProjectID, session.StartedAt)
 	return err
 }
 
 // GetSession retrieves a session by ID.
 func (m *MySQL) GetSession(ctx context.Context, id string) (*models.Session, error) {
-	query := `SELECT id, user_name, started_at, ended_at, COALESCE(summary, ''), created_at, updated_at FROM sessions WHERE id = ?`
+	query := `SELECT id, user_name, COALESCE(project_id, ''), started_at, ended_at, COALESCE(summary, ''), created_at, updated_at FROM sessions WHERE id = ?`
 	session := &models.Session{}
 	err := m.db.QueryRowContext(ctx, query, id).Scan(
-		&session.ID, &session.UserName, &session.StartedAt, &session.EndedAt,
+		&session.ID, &session.UserName, &session.ProjectID, &session.StartedAt, &session.EndedAt,
 		&session.Summary, &session.CreatedAt, &session.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {

@@ -145,7 +145,7 @@ func (s *Server) handleContextInject(c *gin.Context) {
 	})
 }
 
-// handleCreateSession handles session creation.
+// handleCreateSession handles session creation (idempotent).
 func (s *Server) handleCreateSession(c *gin.Context) {
 	var req models.CreateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -156,9 +156,17 @@ func (s *Server) handleCreateSession(c *gin.Context) {
 		return
 	}
 
+	// Check if session already exists (idempotent)
+	existing, _ := s.db.GetSession(c.Request.Context(), req.ID)
+	if existing != nil {
+		c.JSON(http.StatusOK, existing)
+		return
+	}
+
 	session := &models.Session{
 		ID:        req.ID,
 		UserName:  req.UserName,
+		ProjectID: req.ProjectID,
 		StartedAt: time.Now(),
 	}
 

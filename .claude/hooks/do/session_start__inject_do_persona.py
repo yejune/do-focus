@@ -47,6 +47,27 @@ def ensure_worker_running() -> bool:
         return False
 
 
+def register_session(session_id: str, project_path: str, user_name: str) -> bool:
+    """Register session with Worker service."""
+    if not HAS_REQUESTS or not session_id:
+        return False
+
+    try:
+        resp = requests.post(
+            f"{WORKER_URL}/api/sessions",
+            json={
+                "id": session_id,
+                "user_name": user_name or "unknown",
+                "project_id": project_path,
+            },
+            timeout=5
+        )
+        return resp.status_code in (200, 201)
+    except Exception:
+        pass
+    return False
+
+
 def get_context_from_worker(session_id: str, project_path: str, user_name: str) -> str:
     """Fetch compressed context from Worker service."""
     if not HAS_REQUESTS:
@@ -76,9 +97,10 @@ def main():
     project_path = os.getcwd()
     user_name = os.environ.get("DO_USER_NAME", "")
 
-    # Try to get context from Worker
+    # Try to register session and get context from Worker
     worker_context = ""
     if ensure_worker_running():
+        register_session(session_id, project_path, user_name)
         worker_context = get_context_from_worker(session_id, project_path, user_name)
 
     # Base enforcement message

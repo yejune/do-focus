@@ -115,7 +115,7 @@ export default function Dashboard() {
                 >
                   <div>
                     <p className="font-medium text-sm truncate max-w-xs">
-                      {session.project_path?.split('/').pop() || session.id || 'Unknown'}
+                      {session.project_id?.split('/').pop() || session.id || 'Unknown'}
                     </p>
                     <p className="text-xs text-gray-500">
                       {new Date(session.started_at).toLocaleString('ko-KR')}

@@ -7,6 +7,7 @@ import "time"
 type Session struct {
 	ID        string     `json:"id" db:"id"`
 	UserName  string     `json:"user_name" db:"user_name"`
+	ProjectID string     `json:"project_id,omitempty" db:"project_id"`
 	StartedAt time.Time  `json:"started_at" db:"started_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty" db:"ended_at"`
 	Summary   string     `json:"summary,omitempty" db:"summary"`
@@ -74,8 +75,9 @@ type ContextInjectResponse struct {
 
 // CreateSessionRequest is the request to create a new session.
 type CreateSessionRequest struct {
-	ID       string `json:"id" binding:"required"`
-	UserName string `json:"user_name" binding:"required"`
+	ID        string `json:"id" binding:"required"`
+	UserName  string `json:"user_name" binding:"required"`
+	ProjectID string `json:"project_id"`
 }
 
 // EndSessionRequest is the request to end a session.

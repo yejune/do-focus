@@ -9,7 +9,7 @@ export interface Project {
 
 export interface Session {
   id: string
-  project_path: string
+  project_id?: string
   started_at: string
   ended_at?: string
   summary?: string
