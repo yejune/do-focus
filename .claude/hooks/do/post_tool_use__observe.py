@@ -21,20 +21,44 @@ def classify_observation(tool_name: str, tool_input: dict, tool_output: str) -> 
         description = tool_input.get("description", "")
         return "delegation", f"[{agent_type}] {description}", agent_type, 4, ["agent", agent_type]
 
-    # Write/Edit → feature
+    # Write/Edit → feature or plan
     if tool_name in ("Write", "Edit", "MultiEdit"):
         file_path = tool_input.get("file_path", "")
+        if ".do/plans/" in file_path or "/.claude/plans/" in file_path:
+            return "plan", f"플랜 생성: {file_path}", None, 5, ["plan"]
         if "test" in file_path.lower():
-            return "test", f"테스트 파일 수정: {file_path}", None, 3, ["test"]
-        return "feature", f"파일 수정: {file_path}", None, 3, ["code"]
+            return "test", f"테스트: {file_path}", None, 3, ["test"]
+        return "feature", f"수정: {file_path}", None, 3, ["code"]
 
-    # Bash git commit
+    # Bash
     if tool_name == "Bash":
-        command = tool_input.get("command", "")
+        command = tool_input.get("command", "")[:100]  # 100자 제한
         if "git commit" in command:
-            return "commit", f"커밋 실행", None, 4, ["git"]
+            return "commit", f"커밋", None, 4, ["git"]
+        if "git push" in command:
+            return "push", f"푸시", None, 4, ["git"]
+        return "bash", f"실행: {command}", None, 2, ["bash"]
 
-    return None, None, None, None, None
+    # Read
+    if tool_name == "Read":
+        file_path = tool_input.get("file_path", "")
+        return "read", f"읽기: {file_path}", None, 1, ["read"]
+
+    # Grep/Glob
+    if tool_name in ("Grep", "Glob"):
+        pattern = tool_input.get("pattern", "")
+        return "search", f"검색: {pattern}", None, 1, ["search"]
+
+    # WebFetch/WebSearch
+    if tool_name == "WebFetch":
+        url = tool_input.get("url", "")
+        return "web", f"웹: {url}", None, 2, ["web"]
+    if tool_name == "WebSearch":
+        query = tool_input.get("query", "")
+        return "web", f"검색: {query}", None, 2, ["web"]
+
+    # 기타 모든 도구
+    return "tool", f"{tool_name}", None, 1, [tool_name.lower()]
 
 def send_to_worker(session_id: str, obs_type: str, content: str,
                    agent_name: str = None, importance: int = 3, tags: list = None):
