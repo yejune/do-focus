@@ -87,7 +87,7 @@
         ]
       },
       {
-        "matcher": "Task|Write|Edit|MultiEdit",
+        "matcher": ".*",
         "hooks": [
           {
             "type": "command",
