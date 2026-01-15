@@ -183,6 +183,42 @@ def request_summary_generation(session_id: str, transcript_path: str) -> bool:
         return False
 
 
+def find_transcript_path(session_id: str) -> str:
+    """Find transcript file path for session."""
+    if not session_id:
+        return ""
+
+    try:
+        # Try common locations
+        home = Path.home()
+
+        # Method 1: From environment
+        cwd = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+        project_path = cwd.replace("/", "-")
+        if project_path.startswith("-"):
+            project_path = project_path[1:]
+
+        transcript_dir = home / ".claude" / "projects" / project_path
+        transcript_file = transcript_dir / f"{session_id}.jsonl"
+
+        if transcript_file.exists():
+            return str(transcript_file)
+
+        # Method 2: Search in .claude/projects
+        projects_dir = home / ".claude" / "projects"
+        if projects_dir.exists():
+            for project_dir in projects_dir.iterdir():
+                if project_dir.is_dir():
+                    candidate = project_dir / f"{session_id}.jsonl"
+                    if candidate.exists():
+                        return str(candidate)
+
+    except Exception:
+        pass
+
+    return ""
+
+
 def main():
     try:
         hook_input = json.loads(sys.stdin.read())
@@ -191,6 +227,10 @@ def main():
 
     session_id = hook_input.get("session_id", os.environ.get("CLAUDE_SESSION_ID", ""))
     transcript_path = hook_input.get("transcript_path", "")
+
+    # If transcript_path not provided, try to find it
+    if not transcript_path and session_id:
+        transcript_path = find_transcript_path(session_id)
 
     summary_requested = False
     response_saved = False
