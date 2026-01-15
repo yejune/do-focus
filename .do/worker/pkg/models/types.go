@@ -93,14 +93,15 @@ type Summary struct {
 
 // Plan represents a development plan.
 type Plan struct {
-	ID        int64     `json:"id" db:"id"`
-	SessionID string    `json:"session_id,omitempty" db:"session_id"`
-	Title     string    `json:"title" db:"title"`
-	Content   string    `json:"content" db:"content"`
-	Status    string    `json:"status" db:"status"` // draft, active, completed
-	FilePath  string    `json:"file_path,omitempty" db:"file_path"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	ID            int64     `json:"id" db:"id"`
+	SessionID     string    `json:"session_id,omitempty" db:"session_id"`
+	Title         string    `json:"title" db:"title"`
+	Content       string    `json:"content" db:"content"`
+	Status        string    `json:"status" db:"status"` // draft, active, completed
+	FilePath      string    `json:"file_path,omitempty" db:"file_path"`
+	RequestPrompt string    `json:"request_prompt,omitempty" db:"request_prompt"` // User request that triggered this plan
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // TeamContext represents context from team members.
@@ -227,10 +228,11 @@ type CreateSummaryRequest struct {
 
 // CreatePlanRequest is the request to create a plan.
 type CreatePlanRequest struct {
-	SessionID string `json:"session_id,omitempty"`
-	Title     string `json:"title" binding:"required"`
-	Content   string `json:"content" binding:"required"`
-	FilePath  string `json:"file_path,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	Title         string `json:"title" binding:"required"`
+	Content       string `json:"content" binding:"required"`
+	FilePath      string `json:"file_path,omitempty"`
+	RequestPrompt string `json:"request_prompt,omitempty"` // User request that triggered this plan
 }
 
 // GenerateSummaryRequest is the request to generate a session summary.

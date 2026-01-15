@@ -411,10 +411,10 @@ func (m *MySQL) GetLatestSummary(ctx context.Context, userName string) (*models.
 // CreatePlan creates a new plan.
 func (m *MySQL) CreatePlan(ctx context.Context, plan *models.Plan) error {
 	query := `
-		INSERT INTO plans (session_id, title, content, status, file_path, created_at, updated_at)
-		VALUES (?, ?, ?, 'draft', ?, NOW(), NOW())
+		INSERT INTO plans (session_id, title, content, status, file_path, request_prompt, created_at, updated_at)
+		VALUES (?, ?, ?, 'draft', ?, ?, NOW(), NOW())
 	`
-	result, err := m.db.ExecContext(ctx, query, plan.SessionID, plan.Title, plan.Content, plan.FilePath)
+	result, err := m.db.ExecContext(ctx, query, plan.SessionID, plan.Title, plan.Content, plan.FilePath, plan.RequestPrompt)
 	if err != nil {
 		return err
 	}
@@ -428,7 +428,7 @@ func (m *MySQL) CreatePlan(ctx context.Context, plan *models.Plan) error {
 // GetActivePlan retrieves the active plan for a user.
 func (m *MySQL) GetActivePlan(ctx context.Context, userName string) (*models.Plan, error) {
 	query := `
-		SELECT p.id, p.session_id, p.title, p.content, p.status, p.file_path, p.created_at, p.updated_at
+		SELECT p.id, p.session_id, p.title, p.content, p.status, COALESCE(p.file_path, ''), COALESCE(p.request_prompt, ''), p.created_at, p.updated_at
 		FROM plans p
 		JOIN sessions s ON p.session_id = s.id
 		WHERE s.user_name = ? AND p.status = 'active'
@@ -438,7 +438,7 @@ func (m *MySQL) GetActivePlan(ctx context.Context, userName string) (*models.Pla
 	plan := &models.Plan{}
 	err := m.db.QueryRowContext(ctx, query, userName).Scan(
 		&plan.ID, &plan.SessionID, &plan.Title, &plan.Content,
-		&plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt,
+		&plan.Status, &plan.FilePath, &plan.RequestPrompt, &plan.CreatedAt, &plan.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -452,7 +452,7 @@ func (m *MySQL) GetAllPlans(ctx context.Context, sessionID string, limit int) ([
 		limit = 50
 	}
 	query := `
-		SELECT id, COALESCE(session_id, ''), title, content, status, COALESCE(file_path, ''), created_at, updated_at
+		SELECT id, COALESCE(session_id, ''), title, content, status, COALESCE(file_path, ''), COALESCE(request_prompt, ''), created_at, updated_at
 		FROM plans
 		WHERE ? = '' OR session_id = ?
 		ORDER BY updated_at DESC
@@ -467,7 +467,7 @@ func (m *MySQL) GetAllPlans(ctx context.Context, sessionID string, limit int) ([
 	var plans []models.Plan
 	for rows.Next() {
 		var plan models.Plan
-		if err := rows.Scan(&plan.ID, &plan.SessionID, &plan.Title, &plan.Content, &plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
+		if err := rows.Scan(&plan.ID, &plan.SessionID, &plan.Title, &plan.Content, &plan.Status, &plan.FilePath, &plan.RequestPrompt, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
 			return nil, err
 		}
 		plans = append(plans, plan)
@@ -634,6 +634,16 @@ func (m *MySQL) runMigrations() error {
 		if exists == 0 {
 			m.db.Exec(fmt.Sprintf(`ALTER TABLE summaries ADD COLUMN %s %s`, col.name, col.def))
 		}
+	}
+
+	// Migration 008: Add request_prompt column to plans table
+	var requestPromptExists int
+	m.db.QueryRow(`
+		SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'plans' AND COLUMN_NAME = 'request_prompt'
+	`).Scan(&requestPromptExists)
+	if requestPromptExists == 0 {
+		m.db.Exec(`ALTER TABLE plans ADD COLUMN request_prompt TEXT`)
 	}
 
 	return nil

@@ -450,11 +450,12 @@ func (s *Server) handleCreatePlan(c *gin.Context) {
 	}
 
 	plan := &models.Plan{
-		SessionID: req.SessionID,
-		Title:     req.Title,
-		Content:   req.Content,
-		Status:    "draft",
-		FilePath:  req.FilePath,
+		SessionID:     req.SessionID,
+		Title:         req.Title,
+		Content:       req.Content,
+		Status:        "draft",
+		FilePath:      req.FilePath,
+		RequestPrompt: req.RequestPrompt,
 	}
 
 	if err := s.db.CreatePlan(c.Request.Context(), plan); err != nil {
@@ -592,12 +593,12 @@ type StructuredSummary struct {
 }
 
 // generateStructuredSummary extracts key information from lastMessage and observations.
+// Enhanced version with better pattern matching and observation utilization.
 func generateStructuredSummary(observations []models.Observation, lastMessage string, userPrompts []string) StructuredSummary {
 	summary := StructuredSummary{}
 
-	// 1. Request: 첫 번째 user prompt 사용
+	// 1. Request: 첫 번째 user prompt 사용 (가장 신뢰할 수 있는 소스)
 	if len(userPrompts) > 0 {
-		// 첫 프롬프트에서 500자 제한
 		req := userPrompts[0]
 		if len(req) > 500 {
 			req = req[:500] + "..."
@@ -605,61 +606,295 @@ func generateStructuredSummary(observations []models.Observation, lastMessage st
 		summary.Request = req
 	}
 
-	// 2. lastMessage에서 마크다운 구조 파싱
-	if lastMessage != "" {
-		parsed := parseMarkdownStructure(lastMessage)
-		if summary.Request == "" && parsed.Request != "" {
-			summary.Request = parsed.Request
-		}
-		summary.Investigated = parsed.Investigated
-		summary.Learned = parsed.Learned
-		summary.Completed = parsed.Completed
-		summary.NextSteps = parsed.NextSteps
-	}
-
-	// 3. observations에서 파일 목록 및 추가 정보 추출
+	// 2. observations에서 풍부한 정보 추출 (lastMessage보다 우선)
 	filesReadMap := make(map[string]bool)
 	filesEditedMap := make(map[string]bool)
 	var completedItems []string
+	var investigatedItems []string
+	var learnedItems []string
+	var nextStepItems []string
 
 	for _, obs := range observations {
+		// FilesRead, FilesModified 필드 활용 (JSON 배열)
+		if obs.FilesRead != "" && obs.FilesRead != "[]" {
+			var files []string
+			if err := json.Unmarshal([]byte(obs.FilesRead), &files); err == nil {
+				for _, f := range files {
+					if f != "" && !filesReadMap[f] {
+						filesReadMap[f] = true
+						summary.FilesRead = append(summary.FilesRead, f)
+					}
+				}
+			}
+		}
+		if obs.FilesModified != "" && obs.FilesModified != "[]" {
+			var files []string
+			if err := json.Unmarshal([]byte(obs.FilesModified), &files); err == nil {
+				for _, f := range files {
+					if f != "" && !filesEditedMap[f] {
+						filesEditedMap[f] = true
+						summary.FilesEdited = append(summary.FilesEdited, f)
+					}
+				}
+			}
+		}
+
+		// Title/Subtitle 활용 (더 구조화된 정보)
+		title := ""
+		if obs.Title != nil && *obs.Title != "" {
+			title = *obs.Title
+		}
+		subtitle := ""
+		if obs.Subtitle != nil && *obs.Subtitle != "" {
+			subtitle = *obs.Subtitle
+		}
+
+		// 타입별 정보 추출
 		switch obs.Type {
-		case "read":
+		case "read", "exploration":
 			path := extractFilePath(obs.Content)
 			if path != "" && !filesReadMap[path] {
 				filesReadMap[path] = true
 				summary.FilesRead = append(summary.FilesRead, path)
 			}
-		case "feature", "edit", "write":
+			// 탐색 내용을 investigated에 추가
+			if title != "" {
+				investigatedItems = append(investigatedItems, title)
+			}
+		case "feature", "edit", "write", "implementation":
 			path := extractFilePath(obs.Content)
 			if path != "" && !filesEditedMap[path] {
 				filesEditedMap[path] = true
 				summary.FilesEdited = append(summary.FilesEdited, path)
 			}
+			// 구현된 기능을 completed에 추가
+			if title != "" {
+				completedItems = append(completedItems, title)
+			} else if obs.Content != "" {
+				completedItems = append(completedItems, obs.Content)
+			}
 		case "decision":
-			completedItems = append(completedItems, obs.Content)
-		case "bugfix":
-			completedItems = append(completedItems, "Fixed: "+obs.Content)
-		case "learning", "insight":
-			if summary.Learned == "" {
-				summary.Learned = obs.Content
+			if title != "" {
+				completedItems = append(completedItems, title)
 			} else {
-				summary.Learned += "\n- " + obs.Content
+				completedItems = append(completedItems, obs.Content)
+			}
+		case "bugfix", "fix":
+			item := "Fixed: "
+			if title != "" {
+				item += title
+			} else {
+				item += obs.Content
+			}
+			completedItems = append(completedItems, item)
+		case "learning", "insight", "discovery":
+			item := ""
+			if title != "" {
+				item = title
+				if subtitle != "" {
+					item += " - " + subtitle
+				}
+			} else {
+				item = obs.Content
+			}
+			if item != "" {
+				learnedItems = append(learnedItems, item)
 			}
 		case "commit":
-			completedItems = append(completedItems, obs.Content)
+			// 커밋 메시지는 작업 완료의 좋은 요약
+			if obs.Content != "" {
+				completedItems = append(completedItems, obs.Content)
+			}
+		case "test", "testing":
+			if title != "" {
+				completedItems = append(completedItems, "Tested: "+title)
+			}
+		case "analysis", "investigation":
+			if title != "" {
+				investigatedItems = append(investigatedItems, title)
+			} else if obs.Content != "" {
+				investigatedItems = append(investigatedItems, obs.Content)
+			}
+		case "todo", "next", "plan":
+			if title != "" {
+				nextStepItems = append(nextStepItems, title)
+			} else if obs.Content != "" {
+				nextStepItems = append(nextStepItems, obs.Content)
+			}
+		}
+
+		// ResultPreview 활용 (있으면)
+		if obs.ResultPreview != nil && *obs.ResultPreview != "" {
+			preview := *obs.ResultPreview
+			// 결과 미리보기에서 추가 정보 추출
+			if strings.Contains(strings.ToLower(preview), "error") || strings.Contains(strings.ToLower(preview), "failed") {
+				// 에러가 있으면 investigated에 추가
+				investigatedItems = append(investigatedItems, "Investigated issue: "+truncateString(preview, 100))
+			}
+		}
+
+		// Narrative 활용 (상세 설명)
+		if obs.Narrative != nil && *obs.Narrative != "" {
+			narrative := *obs.Narrative
+			// 긴 narrative에서 핵심 추출
+			if len(narrative) > 200 {
+				narrative = narrative[:200] + "..."
+			}
+			// investigation 타입이면 investigated에 추가
+			if obs.Type == "analysis" || obs.Type == "investigation" || obs.Type == "exploration" {
+				if !containsString(investigatedItems, narrative) {
+					investigatedItems = append(investigatedItems, narrative)
+				}
+			}
 		}
 	}
 
-	// observations에서 추출한 완료 항목 추가 (파싱된 내용이 없을 때만)
-	if summary.Completed == "" && len(completedItems) > 0 {
-		summary.Completed = strings.Join(completedItems, "\n- ")
+	// 3. lastMessage에서 추가 정보 추출 (observations에서 못 찾은 것만)
+	if lastMessage != "" {
+		parsed := parseMarkdownStructure(lastMessage)
+
+		// lastMessage에서 추출한 내용 보완
+		if summary.Request == "" && parsed.Request != "" {
+			summary.Request = parsed.Request
+		}
+
+		// observations에서 이미 수집한 것과 병합
+		if parsed.Investigated != "" && len(investigatedItems) == 0 {
+			investigatedItems = append(investigatedItems, parsed.Investigated)
+		}
+		if parsed.Learned != "" && len(learnedItems) == 0 {
+			learnedItems = append(learnedItems, parsed.Learned)
+		}
+		if parsed.Completed != "" && len(completedItems) == 0 {
+			completedItems = append(completedItems, parsed.Completed)
+		}
+		if parsed.NextSteps != "" && len(nextStepItems) == 0 {
+			nextStepItems = append(nextStepItems, parsed.NextSteps)
+		}
+	}
+
+	// 4. 수집된 항목들을 요약 필드로 변환
+	if len(investigatedItems) > 0 {
+		summary.Investigated = formatItems(investigatedItems, 5)
+	}
+	if len(learnedItems) > 0 {
+		summary.Learned = formatItems(learnedItems, 5)
+	}
+	if len(completedItems) > 0 {
+		summary.Completed = formatItems(completedItems, 10)
+	}
+	if len(nextStepItems) > 0 {
+		summary.NextSteps = formatItems(nextStepItems, 5)
+	}
+
+	// 5. 아무 정보도 없으면 lastMessage에서 동사 기반 추출 시도
+	if summary.Completed == "" && lastMessage != "" {
+		summary.Completed = extractActionItems(lastMessage)
 	}
 
 	return summary
 }
 
+// formatItems formats a list of items as bullet points, limiting to maxItems.
+func formatItems(items []string, maxItems int) string {
+	// 중복 제거
+	seen := make(map[string]bool)
+	unique := make([]string, 0)
+	for _, item := range items {
+		normalized := strings.TrimSpace(item)
+		if normalized != "" && !seen[normalized] {
+			seen[normalized] = true
+			unique = append(unique, normalized)
+		}
+	}
+
+	if len(unique) == 0 {
+		return ""
+	}
+
+	if len(unique) > maxItems {
+		unique = unique[:maxItems]
+	}
+
+	if len(unique) == 1 {
+		return unique[0]
+	}
+
+	var result []string
+	for _, item := range unique {
+		result = append(result, "- "+item)
+	}
+	return strings.Join(result, "\n")
+}
+
+// truncateString truncates a string to maxLen characters.
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+// containsString checks if a slice contains a string.
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+// extractActionItems extracts action-oriented items from text using verb patterns.
+func extractActionItems(text string) string {
+	// 코드 블록 제거
+	text = removeCodeBlocks(text)
+
+	lines := strings.Split(text, "\n")
+	var actions []string
+
+	// 동사 패턴 (영어 + 한국어)
+	actionPatterns := []string{
+		// 영어 완료형
+		"implemented", "added", "created", "fixed", "updated", "modified",
+		"configured", "installed", "set up", "removed", "deleted",
+		"refactored", "optimized", "enhanced", "improved", "resolved",
+		"completed", "finished", "built", "deployed", "tested",
+		// 한국어 완료형
+		"구현", "추가", "생성", "수정", "삭제", "설정", "설치",
+		"리팩토링", "최적화", "개선", "해결", "완료", "빌드", "배포", "테스트",
+	}
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 리스트 아이템 처리
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "• ") {
+			line = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* "), "• ")
+		}
+
+		lineLower := strings.ToLower(line)
+		for _, pattern := range actionPatterns {
+			if strings.Contains(lineLower, pattern) {
+				// 너무 긴 라인은 자르기
+				if len(line) > 150 {
+					line = line[:150] + "..."
+				}
+				actions = append(actions, line)
+				break
+			}
+		}
+	}
+
+	// 중복 제거 및 최대 10개로 제한
+	return formatItems(actions, 10)
+}
+
 // parseMarkdownStructure parses markdown text and extracts structured sections.
+// Enhanced version with better pattern matching for unstructured text.
 func parseMarkdownStructure(text string) StructuredSummary {
 	summary := StructuredSummary{}
 
@@ -679,33 +914,100 @@ func parseMarkdownStructure(text string) StructuredSummary {
 		switch {
 		case containsAny(headingLower, "request", "요청", "task"):
 			summary.Request = contentClean
-		case containsAny(headingLower, "investigated", "분석", "조사", "확인", "탐색"):
+		case containsAny(headingLower, "investigated", "분석", "조사", "확인", "탐색", "analysis", "review"):
 			summary.Investigated = contentClean
-		case containsAny(headingLower, "learned", "학습", "발견", "insight", "배움"):
+		case containsAny(headingLower, "learned", "학습", "발견", "insight", "배움", "discovery"):
 			summary.Learned = contentClean
-		case containsAny(headingLower, "completed", "완료", "구현", "수정", "done", "result"):
+		case containsAny(headingLower, "completed", "완료", "구현", "수정", "done", "result", "summary", "changes"):
 			summary.Completed = contentClean
-		case containsAny(headingLower, "next", "다음", "todo", "후속", "계획"):
+		case containsAny(headingLower, "next", "다음", "todo", "후속", "계획", "follow"):
 			summary.NextSteps = contentClean
 		}
 	}
 
-	// 헤딩이 없는 경우 리스트 아이템에서 추출
-	if summary.Completed == "" {
-		listItems := extractListItems(text)
+	// 헤딩이 없거나 completed가 비어있으면 리스트 아이템에서 추출
+	listItems := extractListItems(text)
+	if len(listItems) > 0 {
 		var completedItems []string
+		var investigatedItems []string
+		var learnedItems []string
+
 		for _, item := range listItems {
 			itemLower := strings.ToLower(item)
-			if containsAny(itemLower, "완료", "구현", "수정", "추가", "fix", "add", "implement", "update") {
+			// 완료 항목 패턴
+			if containsAny(itemLower, "완료", "구현", "수정", "추가", "fix", "add", "implement", "update",
+				"create", "modify", "change", "set", "configure", "install", "remove", "delete",
+				"refactor", "optimize", "enhance", "improve", "resolve", "build", "deploy") {
 				completedItems = append(completedItems, item)
 			}
+			// 분석/조사 패턴
+			if containsAny(itemLower, "분석", "조사", "확인", "검토", "analyze", "review", "check", "examine", "investigate", "found", "discovered") {
+				investigatedItems = append(investigatedItems, item)
+			}
+			// 학습/발견 패턴
+			if containsAny(itemLower, "학습", "발견", "배움", "알게", "learn", "discover", "realize", "understand", "note") {
+				learnedItems = append(learnedItems, item)
+			}
 		}
-		if len(completedItems) > 0 {
-			summary.Completed = strings.Join(completedItems, "\n")
+
+		if summary.Completed == "" && len(completedItems) > 0 {
+			summary.Completed = formatItems(completedItems, 10)
+		}
+		if summary.Investigated == "" && len(investigatedItems) > 0 {
+			summary.Investigated = formatItems(investigatedItems, 5)
+		}
+		if summary.Learned == "" && len(learnedItems) > 0 {
+			summary.Learned = formatItems(learnedItems, 5)
 		}
 	}
 
+	// 그래도 completed가 비어있으면 첫 몇 줄의 의미있는 문장 추출
+	if summary.Completed == "" {
+		summary.Completed = extractFirstMeaningfulSentences(text, 3)
+	}
+
 	return summary
+}
+
+// extractFirstMeaningfulSentences extracts the first N meaningful sentences from text.
+func extractFirstMeaningfulSentences(text string, maxSentences int) string {
+	lines := strings.Split(text, "\n")
+	var sentences []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 헤딩 건너뛰기
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		// 리스트 마커 제거
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "• ") {
+			line = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* "), "• ")
+		}
+		// 너무 짧은 라인 건너뛰기 (10자 미만)
+		if len(line) < 10 {
+			continue
+		}
+		// 의미없는 라인 건너뛰기
+		lineLower := strings.ToLower(line)
+		if containsAny(lineLower, "here is", "here's", "let me", "i will", "i'll", "i've", "이제", "그럼", "아래") {
+			continue
+		}
+
+		sentences = append(sentences, line)
+		if len(sentences) >= maxSentences {
+			break
+		}
+	}
+
+	if len(sentences) == 0 {
+		return ""
+	}
+
+	return formatItems(sentences, maxSentences)
 }
 
 // removeCodeBlocks removes ```...``` code blocks from text.

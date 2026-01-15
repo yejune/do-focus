@@ -205,6 +205,9 @@ func (s *SQLite) runMigrations() error {
 		_, _ = s.db.Exec(col)
 	}
 
+	// Migration 008: Add request_prompt column to plans table
+	_, _ = s.db.Exec(`ALTER TABLE plans ADD COLUMN request_prompt TEXT`)
+
 	return nil
 }
 
@@ -519,11 +522,11 @@ func (s *SQLite) GetLatestSummary(ctx context.Context, userName string) (*models
 // CreatePlan creates a new plan.
 func (s *SQLite) CreatePlan(ctx context.Context, plan *models.Plan) error {
 	query := `
-		INSERT INTO plans (session_id, title, content, status, file_path, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO plans (session_id, title, content, status, file_path, request_prompt, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	now := time.Now()
-	result, err := s.db.ExecContext(ctx, query, plan.SessionID, plan.Title, plan.Content, "draft", plan.FilePath, now, now)
+	result, err := s.db.ExecContext(ctx, query, plan.SessionID, plan.Title, plan.Content, "draft", plan.FilePath, plan.RequestPrompt, now, now)
 	if err != nil {
 		return err
 	}
@@ -537,7 +540,7 @@ func (s *SQLite) CreatePlan(ctx context.Context, plan *models.Plan) error {
 // GetActivePlan retrieves the active plan for a user.
 func (s *SQLite) GetActivePlan(ctx context.Context, userName string) (*models.Plan, error) {
 	query := `
-		SELECT p.id, p.session_id, p.title, p.content, p.status, p.file_path, p.created_at, p.updated_at
+		SELECT p.id, p.session_id, p.title, p.content, p.status, COALESCE(p.file_path, ''), COALESCE(p.request_prompt, ''), p.created_at, p.updated_at
 		FROM plans p
 		JOIN sessions s ON p.session_id = s.id
 		WHERE s.user_name = ? AND p.status = 'active'
@@ -547,7 +550,7 @@ func (s *SQLite) GetActivePlan(ctx context.Context, userName string) (*models.Pl
 	plan := &models.Plan{}
 	err := s.db.QueryRowContext(ctx, query, userName).Scan(
 		&plan.ID, &plan.SessionID, &plan.Title, &plan.Content,
-		&plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt,
+		&plan.Status, &plan.FilePath, &plan.RequestPrompt, &plan.CreatedAt, &plan.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -561,7 +564,7 @@ func (s *SQLite) GetAllPlans(ctx context.Context, sessionID string, limit int) (
 		limit = 50
 	}
 	query := `
-		SELECT id, COALESCE(session_id, ''), title, content, status, COALESCE(file_path, ''), created_at, updated_at
+		SELECT id, COALESCE(session_id, ''), title, content, status, COALESCE(file_path, ''), COALESCE(request_prompt, ''), created_at, updated_at
 		FROM plans
 		WHERE ? = '' OR session_id = ?
 		ORDER BY updated_at DESC
@@ -576,7 +579,7 @@ func (s *SQLite) GetAllPlans(ctx context.Context, sessionID string, limit int) (
 	var plans []models.Plan
 	for rows.Next() {
 		var plan models.Plan
-		if err := rows.Scan(&plan.ID, &plan.SessionID, &plan.Title, &plan.Content, &plan.Status, &plan.FilePath, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
+		if err := rows.Scan(&plan.ID, &plan.SessionID, &plan.Title, &plan.Content, &plan.Status, &plan.FilePath, &plan.RequestPrompt, &plan.CreatedAt, &plan.UpdatedAt); err != nil {
 			return nil, err
 		}
 		plans = append(plans, plan)

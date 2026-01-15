@@ -90,6 +90,22 @@ def send_to_worker(session_id: str, obs_type: str, content: str,
         pass  # 실패해도 무시
 
 
+def get_latest_user_prompt(session_id: str) -> str:
+    """Worker에서 가장 최근 user_prompt 조회"""
+    try:
+        url = f"{WORKER_URL}/api/prompts?session_id={session_id}&limit=1"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            prompts = json.loads(resp.read().decode('utf-8'))
+            if prompts and len(prompts) > 0:
+                # 가장 마지막 프롬프트 반환 (prompt_number가 가장 큰 것)
+                latest = max(prompts, key=lambda p: p.get('prompt_number', 0))
+                return latest.get('prompt_text', '')[:1000]  # 1KB 제한
+    except:
+        pass
+    return ""
+
+
 def send_plan_to_worker(session_id: str, file_path: str, plan_content: str):
     """Worker에 플랜 저장 (plans 테이블)"""
     try:
@@ -102,12 +118,16 @@ def send_plan_to_worker(session_id: str, file_path: str, plan_content: str):
         if len(parts) >= 3 and parts[0].isdigit():
             title = parts[2] if len(parts) > 2 else parts[1]
 
+        # 가장 최근 user_prompt 조회
+        request_prompt = get_latest_user_prompt(session_id)
+
         data = {
             "session_id": session_id,
             "title": title,
             "content": plan_content[:10000],  # 10KB 제한
             "status": "draft",
-            "file_path": file_path
+            "file_path": file_path,
+            "request_prompt": request_prompt
         }
 
         req = urllib.request.Request(
