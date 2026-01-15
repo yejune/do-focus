@@ -1,16 +1,20 @@
 class Godo < Formula
   desc "CLI installer for Do - Claude Code project environment"
   homepage "https://github.com/yejune/do-focus"
-  url "https://github.com/yejune/do-focus/archive/refs/tags/v0.1.58.tar.gz"
-  sha256 "43b389e9e3b93ba1f2bd6a4d7bae8d2b9076e3077ff362cbcfe0d889f4ee0b22"
+  url "https://github.com/yejune/do-focus/archive/refs/tags/v0.1.59.tar.gz"
+  sha256 "0c75f556793477ad607769f5ea5169f46bb2f67d3a48b24bee0d811e8290f4f7"
   license "MIT"
   head "https://github.com/yejune/do-focus.git", branch: "main"
 
   depends_on "go" => :build
 
   def install
-        bin.install "godo"
-    bin.install "do-worker"
+        system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "godo", "./cmd/godo/"
+    Dir.chdir(".do/worker") do
+      system "go", "build", "-ldflags", "-X main.version=#{version}", "-o", "../../godo-worker", "./cmd/worker/"
+    end
+    bin.install "godo"
+    bin.install "godo-worker"
   end
 
   def test
@@ -23,8 +27,8 @@ class Godo < Formula
       
       Usage:
         cd my-project
-        godo init      # Install Do
-        godo update    # Update Do
+        godo sync             # Install or update Do
+        godo worker start     # Start memory worker
     EOS
   end
 end

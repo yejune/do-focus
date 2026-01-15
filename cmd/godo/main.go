@@ -653,12 +653,6 @@ func getWorkerPID() int {
 }
 
 func workerStart() {
-	// Kill existing if running (for restart)
-	if pid := getWorkerPID(); pid > 0 {
-		exec.Command("kill", fmt.Sprintf("%d", pid)).Run()
-		time.Sleep(500 * time.Millisecond)
-	}
-
 	workerPath := getWorkerPath()
 
 	// Check if worker binary exists
@@ -671,6 +665,19 @@ func workerStart() {
 		}
 	}
 
+	// Kill existing if running (idempotent restart)
+	if pid := getWorkerPID(); pid > 0 {
+		// Try SIGTERM first
+		exec.Command("kill", fmt.Sprintf("%d", pid)).Run()
+		time.Sleep(500 * time.Millisecond)
+
+		// If still running, SIGKILL
+		if getWorkerPID() > 0 {
+			exec.Command("kill", "-9", fmt.Sprintf("%d", pid)).Run()
+			time.Sleep(300 * time.Millisecond)
+		}
+	}
+
 	// Start worker
 	cmd := exec.Command(workerPath)
 	cmd.Stdout = nil
@@ -680,15 +687,17 @@ func workerStart() {
 		os.Exit(1)
 	}
 
-	// Wait for startup
-	time.Sleep(500 * time.Millisecond)
-
-	if isWorkerRunning() {
-		fmt.Println("✓ Worker started (PID: " + fmt.Sprintf("%d", cmd.Process.Pid) + ")")
-		fmt.Println("  http://127.0.0.1:3778")
-	} else {
-		fmt.Println("Warning: Worker may not have started correctly")
+	// Wait for startup and verify
+	for i := 0; i < 10; i++ {
+		time.Sleep(200 * time.Millisecond)
+		if isWorkerRunning() {
+			fmt.Printf("✓ Worker started (PID: %d)\n", cmd.Process.Pid)
+			fmt.Println("  http://127.0.0.1:3778")
+			return
+		}
 	}
+
+	fmt.Println("Warning: Worker may not have started correctly")
 }
 
 func workerStop() {
