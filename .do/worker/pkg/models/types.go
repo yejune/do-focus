@@ -89,6 +89,7 @@ type Summary struct {
 	FilesRead       string  `json:"files_read,omitempty" db:"files_read"`     // JSON array
 	FilesEdited     string  `json:"files_edited,omitempty" db:"files_edited"` // JSON array
 	DiscoveryTokens int     `json:"discovery_tokens" db:"discovery_tokens"`
+	SourceMessage   string  `json:"source_message,omitempty" db:"source_message"` // Original assistant message
 }
 
 // Plan represents a development plan.

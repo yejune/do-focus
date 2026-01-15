@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -549,25 +550,45 @@ func (s *Server) handleGenerateSummary(c *gin.Context) {
 		promptTexts = append(promptTexts, p.PromptText)
 	}
 
-	// 4. Generate structured summary
-	structured := generateStructuredSummary(observations, req.LastAssistantMessage, promptTexts)
+	// 4. Generate structured summary (LLM if available, else rule-based)
+	var structured StructuredSummary
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey != "" && req.LastAssistantMessage != "" {
+		// Try LLM-based summary
+		llmSummary, err := generateLLMSummary(ctx, req.LastAssistantMessage, promptTexts, apiKey)
+		if err == nil && llmSummary != nil {
+			structured = *llmSummary
+		} else {
+			// Fallback to rule-based
+			structured = generateStructuredSummary(observations, req.LastAssistantMessage, promptTexts)
+		}
+	} else {
+		structured = generateStructuredSummary(observations, req.LastAssistantMessage, promptTexts)
+	}
 
 	// 5. Convert to JSON for file lists
 	filesReadJSON, _ := json.Marshal(structured.FilesRead)
 	filesEditedJSON, _ := json.Marshal(structured.FilesEdited)
 
 	// 6. Save summary to DB with structured fields
+	// Truncate source message to 10KB for storage
+	sourceMsg := req.LastAssistantMessage
+	if len(sourceMsg) > 10000 {
+		sourceMsg = sourceMsg[:10000] + "\n...(truncated)"
+	}
+
 	summary := &models.Summary{
-		SessionID:    req.SessionID,
-		Type:         "session",
-		Content:      formatSummaryAsMarkdown(structured),
-		Request:      strPtr(structured.Request),
-		Investigated: strPtr(structured.Investigated),
-		Learned:      strPtr(structured.Learned),
-		Completed:    strPtr(structured.Completed),
-		NextSteps:    strPtr(structured.NextSteps),
-		FilesRead:    string(filesReadJSON),
-		FilesEdited:  string(filesEditedJSON),
+		SessionID:     req.SessionID,
+		Type:          "session",
+		Content:       formatSummaryAsMarkdown(structured),
+		Request:       strPtr(structured.Request),
+		Investigated:  strPtr(structured.Investigated),
+		Learned:       strPtr(structured.Learned),
+		Completed:     strPtr(structured.Completed),
+		NextSteps:     strPtr(structured.NextSteps),
+		FilesRead:     string(filesReadJSON),
+		FilesEdited:   string(filesEditedJSON),
+		SourceMessage: sourceMsg,
 	}
 
 	if err := s.db.CreateSummary(ctx, summary); err != nil {
@@ -1107,6 +1128,119 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// generateLLMSummary generates a summary using Anthropic Claude API.
+func generateLLMSummary(ctx context.Context, lastMessage string, userPrompts []string, apiKey string) (*StructuredSummary, error) {
+	// Build the prompt (claude-mem style)
+	userRequest := ""
+	if len(userPrompts) > 0 {
+		userRequest = userPrompts[0]
+		if len(userRequest) > 500 {
+			userRequest = userRequest[:500] + "..."
+		}
+	}
+
+	prompt := `PROGRESS SUMMARY CHECKPOINT
+===========================
+Write progress notes of what was done, what was learned, and what's next.
+This is a checkpoint to capture progress so far.
+
+User's Request:
+` + userRequest + `
+
+Claude's Response:
+` + lastMessage + `
+
+Respond in this XML format ONLY:
+<summary>
+  <request>What the user originally requested</request>
+  <investigated>What was explored or analyzed</investigated>
+  <learned>Key learnings or discoveries</learned>
+  <completed>What was actually done/implemented</completed>
+  <next_steps>Current trajectory of work</next_steps>
+</summary>
+
+IMPORTANT: Output ONLY the XML summary, nothing else.`
+
+	// Call Anthropic API
+	requestBody := map[string]interface{}{
+		"model":      "claude-sonnet-4-20250514",
+		"max_tokens": 1000,
+		"messages": []map[string]string{
+			{"role": "user", "content": prompt},
+		},
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Content) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+
+	// Parse XML response
+	return parseSummaryXML(result.Content[0].Text)
+}
+
+// parseSummaryXML parses the XML summary response from LLM.
+func parseSummaryXML(text string) (*StructuredSummary, error) {
+	summary := &StructuredSummary{}
+
+	// Extract each field from XML
+	extractXMLField := func(xml, tag string) string {
+		start := strings.Index(xml, "<"+tag+">")
+		end := strings.Index(xml, "</"+tag+">")
+		if start == -1 || end == -1 || start >= end {
+			return ""
+		}
+		return strings.TrimSpace(xml[start+len(tag)+2 : end])
+	}
+
+	summary.Request = extractXMLField(text, "request")
+	summary.Investigated = extractXMLField(text, "investigated")
+	summary.Learned = extractXMLField(text, "learned")
+	summary.Completed = extractXMLField(text, "completed")
+	summary.NextSteps = extractXMLField(text, "next_steps")
+
+	// Check if we got anything useful
+	if summary.Request == "" && summary.Completed == "" {
+		return nil, fmt.Errorf("no useful content in response")
+	}
+
+	return summary, nil
 }
 
 // formatSummaryAsMarkdown converts StructuredSummary to markdown string for legacy compatibility.

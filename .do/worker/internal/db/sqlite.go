@@ -208,6 +208,9 @@ func (s *SQLite) runMigrations() error {
 	// Migration 008: Add request_prompt column to plans table
 	_, _ = s.db.Exec(`ALTER TABLE plans ADD COLUMN request_prompt TEXT`)
 
+	// Migration 009: Add source_message column to summaries table
+	_, _ = s.db.Exec(`ALTER TABLE summaries ADD COLUMN source_message TEXT`)
+
 	return nil
 }
 
@@ -410,8 +413,8 @@ func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) err
 	query := `INSERT INTO summaries (
 		session_id, type, content, created_at,
 		request, investigated, learned, completed, next_steps,
-		files_read, files_edited, discovery_tokens
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		files_read, files_edited, discovery_tokens, source_message
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.db.ExecContext(ctx, query,
 		summary.SessionID,
@@ -426,6 +429,7 @@ func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) err
 		summary.FilesRead,
 		summary.FilesEdited,
 		summary.DiscoveryTokens,
+		summary.SourceMessage,
 	)
 	if err != nil {
 		return err
