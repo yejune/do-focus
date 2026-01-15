@@ -89,7 +89,8 @@ type Summary struct {
 	FilesRead       string  `json:"files_read,omitempty" db:"files_read"`     // JSON array
 	FilesEdited     string  `json:"files_edited,omitempty" db:"files_edited"` // JSON array
 	DiscoveryTokens int     `json:"discovery_tokens" db:"discovery_tokens"`
-	SourceMessage   string  `json:"source_message,omitempty" db:"source_message"` // Original assistant message
+	SourceMessage   string  `json:"source_message,omitempty" db:"source_message"`   // Original assistant message
+	FullTranscript  string  `json:"full_transcript,omitempty" db:"full_transcript"` // Complete session transcript (JSONL)
 }
 
 // Plan represents a development plan.
@@ -240,6 +241,7 @@ type CreatePlanRequest struct {
 type GenerateSummaryRequest struct {
 	SessionID            string                 `json:"session_id" binding:"required"`
 	LastAssistantMessage string                 `json:"last_assistant_message"`
+	FullTranscript       string                 `json:"full_transcript,omitempty"` // Complete session transcript (JSONL)
 	TranscriptStats      map[string]interface{} `json:"transcript_stats,omitempty"`
 }
 

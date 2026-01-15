@@ -190,18 +190,13 @@ def end_session_in_worker(session_id: str, project_path: str) -> bool:
         return False
 
 
-def get_last_assistant_message() -> str:
-    """Extract last assistant message from transcript file.
-
-    Returns:
-        Last assistant message or empty string
-    """
+def get_transcript_file_path() -> Optional[Path]:
+    """Get transcript file path for current session."""
     try:
         session_id = os.environ.get("CLAUDE_SESSION_ID", "")
         if not session_id:
-            return ""
+            return None
 
-        # Find transcript file
         home = Path.home()
         project_path = str(find_project_root()).replace("/", "-")
         if project_path.startswith("-"):
@@ -210,7 +205,42 @@ def get_last_assistant_message() -> str:
         transcript_dir = home / ".claude" / "projects" / project_path
         transcript_file = transcript_dir / f"{session_id}.jsonl"
 
-        if not transcript_file.exists():
+        return transcript_file if transcript_file.exists() else None
+    except Exception:
+        return None
+
+
+def get_full_transcript() -> str:
+    """Read full transcript file content.
+
+    Returns:
+        Full transcript as JSONL string (max 500KB)
+    """
+    try:
+        transcript_file = get_transcript_file_path()
+        if not transcript_file:
+            return ""
+
+        content = transcript_file.read_text(encoding="utf-8")
+        # Limit to 500KB
+        if len(content) > 500000:
+            content = content[:500000] + "\n...(truncated)"
+        return content
+
+    except Exception as e:
+        logger.warning(f"Failed to read full transcript: {e}")
+        return ""
+
+
+def get_last_assistant_message() -> str:
+    """Extract last assistant message from transcript file (includes tool_use).
+
+    Returns:
+        Last assistant message or empty string
+    """
+    try:
+        transcript_file = get_transcript_file_path()
+        if not transcript_file:
             return ""
 
         # Read last assistant message (search from end)
@@ -222,14 +252,20 @@ def get_last_assistant_message() -> str:
                     if entry.get("type") == "assistant" and entry.get("message"):
                         msg = entry["message"]
                         if isinstance(msg, dict):
-                            # Extract text from message content
+                            # Extract all content (text + tool_use)
                             content = msg.get("content", [])
-                            texts = []
+                            parts = []
                             for block in content:
-                                if isinstance(block, dict) and block.get("type") == "text":
-                                    texts.append(block.get("text", ""))
-                            if texts:
-                                last_message = "\n".join(texts)
+                                if isinstance(block, dict):
+                                    if block.get("type") == "text":
+                                        parts.append(block.get("text", ""))
+                                    elif block.get("type") == "tool_use":
+                                        # Include tool_use info
+                                        tool_name = block.get("name", "unknown")
+                                        tool_input = block.get("input", {})
+                                        parts.append(f"\n[Tool: {tool_name}]\n{json.dumps(tool_input, ensure_ascii=False, indent=2)[:1000]}")
+                            if parts:
+                                last_message = "\n".join(parts)
                         elif isinstance(msg, str):
                             last_message = msg
                 except Exception:
@@ -242,12 +278,13 @@ def get_last_assistant_message() -> str:
         return ""
 
 
-def request_summary_generation(session_id: str, last_message: str = "") -> bool:
+def request_summary_generation(session_id: str, last_message: str = "", full_transcript: str = "") -> bool:
     """Request session summary generation (Worker generates based on observations)
 
     Args:
         session_id: Session ID for summary generation
-        last_message: Last assistant message for summary context
+        last_message: Last assistant message for summary context (includes tool_use)
+        full_transcript: Complete session transcript (JSONL)
 
     Returns:
         Success status
@@ -256,6 +293,7 @@ def request_summary_generation(session_id: str, last_message: str = "") -> bool:
         request_data = {
             "session_id": session_id,
             "last_assistant_message": last_message,
+            "full_transcript": full_transcript,
         }
         data = json.dumps(request_data).encode("utf-8")
 
@@ -266,7 +304,7 @@ def request_summary_generation(session_id: str, last_message: str = "") -> bool:
             method="POST",
         )
 
-        with urllib.request.urlopen(req, timeout=5) as response:  # Increased timeout for larger payload
+        with urllib.request.urlopen(req, timeout=10) as response:  # Increased timeout for larger payload
             if response.status in (200, 201, 202):
                 logger.info(f"Summary generation requested for session: {session_id}")
                 return True
@@ -975,14 +1013,17 @@ def execute_session_end_workflow() -> tuple[Dict[str, Any], str]:
             if end_session_in_worker(session_id, project_path):
                 results["worker_notified"] = True
 
-            # Extract last assistant message for summary generation
+            # Extract last assistant message and full transcript for summary generation
             last_message = get_last_assistant_message()
+            full_transcript = get_full_transcript()
 
-            # Request summary generation with last message for source storage
-            if request_summary_generation(session_id, last_message):
+            # Request summary generation with last message and full transcript
+            if request_summary_generation(session_id, last_message, full_transcript):
                 results["summary_requested"] = True
                 if last_message:
                     results["source_message_size"] = len(last_message)
+                if full_transcript:
+                    results["full_transcript_size"] = len(full_transcript)
 
         # Record execution time
         execution_time = time.time() - start_time

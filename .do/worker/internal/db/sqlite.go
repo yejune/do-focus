@@ -211,6 +211,9 @@ func (s *SQLite) runMigrations() error {
 	// Migration 009: Add source_message column to summaries table
 	_, _ = s.db.Exec(`ALTER TABLE summaries ADD COLUMN source_message TEXT`)
 
+	// Migration 010: Add full_transcript column to summaries table (stores complete session transcript)
+	_, _ = s.db.Exec(`ALTER TABLE summaries ADD COLUMN full_transcript TEXT`)
+
 	return nil
 }
 
@@ -413,8 +416,8 @@ func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) err
 	query := `INSERT INTO summaries (
 		session_id, type, content, created_at,
 		request, investigated, learned, completed, next_steps,
-		files_read, files_edited, discovery_tokens, source_message
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		files_read, files_edited, discovery_tokens, source_message, full_transcript
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.db.ExecContext(ctx, query,
 		summary.SessionID,
@@ -430,6 +433,7 @@ func (s *SQLite) CreateSummary(ctx context.Context, summary *models.Summary) err
 		summary.FilesEdited,
 		summary.DiscoveryTokens,
 		summary.SourceMessage,
+		summary.FullTranscript,
 	)
 	if err != nil {
 		return err
@@ -478,7 +482,8 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 	query := `
 		SELECT id, COALESCE(session_id, ''), type, content, created_at,
 			COALESCE(request, ''), COALESCE(investigated, ''), COALESCE(learned, ''),
-			COALESCE(completed, ''), COALESCE(next_steps, ''), COALESCE(source_message, '')
+			COALESCE(completed, ''), COALESCE(next_steps, ''), COALESCE(source_message, ''),
+			COALESCE(full_transcript, '')
 		FROM summaries
 		WHERE created_at >= datetime('now', ? || ' days')
 		ORDER BY created_at DESC
@@ -494,9 +499,9 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 	var summaries []models.Summary
 	for rows.Next() {
 		var sum models.Summary
-		var request, investigated, learned, completed, nextSteps, sourceMessage string
+		var request, investigated, learned, completed, nextSteps, sourceMessage, fullTranscript string
 		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt,
-			&request, &investigated, &learned, &completed, &nextSteps, &sourceMessage); err != nil {
+			&request, &investigated, &learned, &completed, &nextSteps, &sourceMessage, &fullTranscript); err != nil {
 			return nil, err
 		}
 		if request != "" {
@@ -516,6 +521,9 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 		}
 		if sourceMessage != "" {
 			sum.SourceMessage = sourceMessage
+		}
+		if fullTranscript != "" {
+			sum.FullTranscript = fullTranscript
 		}
 		summaries = append(summaries, sum)
 	}

@@ -571,24 +571,31 @@ func (s *Server) handleGenerateSummary(c *gin.Context) {
 	filesEditedJSON, _ := json.Marshal(structured.FilesEdited)
 
 	// 6. Save summary to DB with structured fields
-	// Truncate source message to 10KB for storage
+	// Truncate source message to 50KB for storage (includes tool_use)
 	sourceMsg := req.LastAssistantMessage
-	if len(sourceMsg) > 10000 {
-		sourceMsg = sourceMsg[:10000] + "\n...(truncated)"
+	if len(sourceMsg) > 50000 {
+		sourceMsg = sourceMsg[:50000] + "\n...(truncated)"
+	}
+
+	// Truncate full transcript to 500KB for storage
+	fullTranscript := req.FullTranscript
+	if len(fullTranscript) > 500000 {
+		fullTranscript = fullTranscript[:500000] + "\n...(truncated)"
 	}
 
 	summary := &models.Summary{
-		SessionID:     req.SessionID,
-		Type:          "session",
-		Content:       formatSummaryAsMarkdown(structured),
-		Request:       strPtr(structured.Request),
-		Investigated:  strPtr(structured.Investigated),
-		Learned:       strPtr(structured.Learned),
-		Completed:     strPtr(structured.Completed),
-		NextSteps:     strPtr(structured.NextSteps),
-		FilesRead:     string(filesReadJSON),
-		FilesEdited:   string(filesEditedJSON),
-		SourceMessage: sourceMsg,
+		SessionID:      req.SessionID,
+		Type:           "session",
+		Content:        formatSummaryAsMarkdown(structured),
+		Request:        strPtr(structured.Request),
+		Investigated:   strPtr(structured.Investigated),
+		Learned:        strPtr(structured.Learned),
+		Completed:      strPtr(structured.Completed),
+		NextSteps:      strPtr(structured.NextSteps),
+		FilesRead:      string(filesReadJSON),
+		FilesEdited:    string(filesEditedJSON),
+		SourceMessage:  sourceMsg,
+		FullTranscript: fullTranscript,
 	}
 
 	if err := s.db.CreateSummary(ctx, summary); err != nil {

@@ -315,8 +315,27 @@ func (m *MySQL) SearchObservations(ctx context.Context, query string, limit int)
 
 // CreateSummary creates a new summary.
 func (m *MySQL) CreateSummary(ctx context.Context, summary *models.Summary) error {
-	query := `INSERT INTO summaries (session_id, type, content, created_at) VALUES (?, ?, ?, NOW())`
-	result, err := m.db.ExecContext(ctx, query, summary.SessionID, summary.Type, summary.Content)
+	query := `INSERT INTO summaries (
+		session_id, type, content, created_at,
+		request, investigated, learned, completed, next_steps,
+		files_read, files_edited, discovery_tokens, source_message, full_transcript
+	) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := m.db.ExecContext(ctx, query,
+		summary.SessionID,
+		summary.Type,
+		summary.Content,
+		summary.Request,
+		summary.Investigated,
+		summary.Learned,
+		summary.Completed,
+		summary.NextSteps,
+		summary.FilesRead,
+		summary.FilesEdited,
+		summary.DiscoveryTokens,
+		summary.SourceMessage,
+		summary.FullTranscript,
+	)
 	if err != nil {
 		return err
 	}
@@ -364,7 +383,8 @@ func (m *MySQL) GetAllSummaries(ctx context.Context, days int, limit int) ([]mod
 	query := `
 		SELECT id, COALESCE(session_id, ''), type, content, created_at,
 			COALESCE(request, ''), COALESCE(investigated, ''), COALESCE(learned, ''),
-			COALESCE(completed, ''), COALESCE(next_steps, ''), COALESCE(source_message, '')
+			COALESCE(completed, ''), COALESCE(next_steps, ''), COALESCE(source_message, ''),
+			COALESCE(full_transcript, '')
 		FROM summaries
 		WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
 		ORDER BY created_at DESC
@@ -379,9 +399,9 @@ func (m *MySQL) GetAllSummaries(ctx context.Context, days int, limit int) ([]mod
 	var summaries []models.Summary
 	for rows.Next() {
 		var sum models.Summary
-		var request, investigated, learned, completed, nextSteps, sourceMessage string
+		var request, investigated, learned, completed, nextSteps, sourceMessage, fullTranscript string
 		if err := rows.Scan(&sum.ID, &sum.SessionID, &sum.Type, &sum.Content, &sum.CreatedAt,
-			&request, &investigated, &learned, &completed, &nextSteps, &sourceMessage); err != nil {
+			&request, &investigated, &learned, &completed, &nextSteps, &sourceMessage, &fullTranscript); err != nil {
 			return nil, err
 		}
 		if request != "" {
@@ -401,6 +421,9 @@ func (m *MySQL) GetAllSummaries(ctx context.Context, days int, limit int) ([]mod
 		}
 		if sourceMessage != "" {
 			sum.SourceMessage = sourceMessage
+		}
+		if fullTranscript != "" {
+			sum.FullTranscript = fullTranscript
 		}
 		summaries = append(summaries, sum)
 	}
@@ -646,6 +669,8 @@ func (m *MySQL) runMigrations() error {
 		{"files_read", "JSON"},
 		{"files_edited", "JSON"},
 		{"discovery_tokens", "INT DEFAULT 0"},
+		{"source_message", "LONGTEXT"},
+		{"full_transcript", "LONGTEXT"},
 	}
 	for _, col := range summaryColumns {
 		var exists int
