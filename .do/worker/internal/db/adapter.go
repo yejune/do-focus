@@ -32,6 +32,7 @@ type Adapter interface {
 	CreateSummary(ctx context.Context, summary *models.Summary) error
 	GetSummaries(ctx context.Context, summaryType string, limit int) ([]models.Summary, error)
 	GetAllSummaries(ctx context.Context, days int, limit int) ([]models.Summary, error)
+	GetLatestSummary(ctx context.Context, userName string) (*models.Summary, error)
 
 	// Plan operations
 	CreatePlan(ctx context.Context, plan *models.Plan) error
@@ -47,6 +48,13 @@ type Adapter interface {
 
 	// Project operations
 	GetProjects(ctx context.Context) ([]models.Project, error)
+
+	// UserPrompt operations
+	CreateUserPrompt(ctx context.Context, prompt *models.UserPrompt) error
+	GetUserPrompts(ctx context.Context, sessionID string, limit int) ([]models.UserPrompt, error)
+
+	// FTS5 Search operations
+	SearchFTS(ctx context.Context, query string, types []string, limit int) ([]models.SearchResult, error)
 }
 
 // Config holds database configuration.

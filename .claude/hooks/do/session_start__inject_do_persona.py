@@ -3,6 +3,10 @@
 
 Forces Claude to follow CLAUDE.md Do directive from session start.
 Fetches context from Worker service for token-efficient session continuity.
+
+Supports:
+- DO_CONTEXT_LEVEL: Context detail level (1=minimal, 2=standard, 3=full)
+- Previously section: Reads last response from cache for continuity
 """
 import json
 import sys
@@ -15,6 +19,32 @@ import urllib.parse
 
 WORKER_PORT = int(os.environ.get("DO_WORKER_PORT", "3778"))
 WORKER_URL = f"http://127.0.0.1:{WORKER_PORT}"
+
+
+def get_context_level() -> int:
+    """Get context level from environment (1=minimal, 2=standard, 3=full)."""
+    level_str = os.environ.get("DO_CONTEXT_LEVEL", "2")
+    try:
+        level = int(level_str)
+        if 1 <= level <= 3:
+            return level
+    except ValueError:
+        pass
+    return 2  # Default to standard
+
+
+def get_last_response_summary() -> str:
+    """Read cached last assistant response for session continuity."""
+    cache_path = os.path.join(os.getcwd(), ".do/cache/last_response.txt")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                # Limit to 500 chars to keep context efficient
+                return content[:500] if len(content) > 500 else content
+        except Exception:
+            pass
+    return ""
 
 
 def ensure_worker_running() -> bool:
@@ -68,13 +98,21 @@ def register_session(session_id: str, project_path: str, user_name: str) -> bool
 
 
 def get_context_from_worker(session_id: str, project_path: str, user_name: str) -> str:
-    """Fetch compressed context from Worker service."""
+    """Fetch compressed context from Worker service.
+
+    Uses DO_CONTEXT_LEVEL for detail level and includes previously section
+    from cached last response for session continuity.
+    """
     try:
+        level = get_context_level()
+        previously = get_last_response_summary()
+
         params = urllib.parse.urlencode({
             "session_id": session_id,
             "project_path": project_path,
-            "user_name": user_name,
-            "level": 1,
+            "user": user_name,
+            "level": level,
+            "previously": previously,
         })
 
         req = urllib.request.Request(f"{WORKER_URL}/api/context/inject?{params}")

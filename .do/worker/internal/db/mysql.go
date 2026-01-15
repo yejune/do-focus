@@ -382,6 +382,29 @@ func (m *MySQL) GetAllSummaries(ctx context.Context, days int, limit int) ([]mod
 	return summaries, rows.Err()
 }
 
+// GetLatestSummary retrieves the latest session summary for a user.
+func (m *MySQL) GetLatestSummary(ctx context.Context, userName string) (*models.Summary, error) {
+	query := `
+		SELECT su.id, COALESCE(su.session_id, ''), su.type, su.content, su.created_at
+		FROM summaries su
+		JOIN sessions s ON su.session_id = s.id
+		WHERE s.user_name = ? AND su.type = 'session'
+		ORDER BY su.created_at DESC
+		LIMIT 1
+	`
+	summary := &models.Summary{}
+	err := m.db.QueryRowContext(ctx, query, userName).Scan(
+		&summary.ID, &summary.SessionID, &summary.Type, &summary.Content, &summary.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return summary, nil
+}
+
 // CreatePlan creates a new plan.
 func (m *MySQL) CreatePlan(ctx context.Context, plan *models.Plan) error {
 	query := `
@@ -543,6 +566,73 @@ func (m *MySQL) runMigrations() error {
 		}
 	}
 
+	// Migration 005: Extend observations table with rich metadata columns
+	observationColumns := []struct {
+		name string
+		def  string
+	}{
+		{"title", "TEXT"},
+		{"subtitle", "TEXT"},
+		{"narrative", "TEXT"},
+		{"facts", "JSON"},
+		{"concepts", "JSON"},
+		{"files_read", "JSON"},
+		{"files_modified", "JSON"},
+		{"result_preview", "TEXT"},
+		{"prompt_number", "INT"},
+		{"discovery_tokens", "INT DEFAULT 0"},
+	}
+	for _, col := range observationColumns {
+		var exists int
+		m.db.QueryRow(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'observations' AND COLUMN_NAME = ?
+		`, col.name).Scan(&exists)
+		if exists == 0 {
+			m.db.Exec(fmt.Sprintf(`ALTER TABLE observations ADD COLUMN %s %s`, col.name, col.def))
+		}
+	}
+
+	// Migration 006: Create user_prompts table
+	_, _ = m.db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_prompts (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			session_id VARCHAR(255) NOT NULL,
+			prompt_number INT NOT NULL,
+			prompt_text TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			created_at_epoch BIGINT NOT NULL,
+			INDEX idx_user_prompts_session (session_id),
+			INDEX idx_user_prompts_prompt_number (session_id, prompt_number),
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`)
+
+	// Migration 007: Extend summaries table with structured fields
+	summaryColumns := []struct {
+		name string
+		def  string
+	}{
+		{"request", "TEXT"},
+		{"investigated", "TEXT"},
+		{"learned", "TEXT"},
+		{"completed", "TEXT"},
+		{"next_steps", "TEXT"},
+		{"files_read", "JSON"},
+		{"files_edited", "JSON"},
+		{"discovery_tokens", "INT DEFAULT 0"},
+	}
+	for _, col := range summaryColumns {
+		var exists int
+		m.db.QueryRow(`
+			SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'summaries' AND COLUMN_NAME = ?
+		`, col.name).Scan(&exists)
+		if exists == 0 {
+			m.db.Exec(fmt.Sprintf(`ALTER TABLE summaries ADD COLUMN %s %s`, col.name, col.def))
+		}
+	}
+
 	return nil
 }
 
@@ -583,4 +673,134 @@ func mysqlTagsToJSON(tags []string) string {
 	}
 	data, _ := json.Marshal(tags)
 	return string(data)
+}
+
+// CreateUserPrompt creates a new user prompt record.
+func (m *MySQL) CreateUserPrompt(ctx context.Context, prompt *models.UserPrompt) error {
+	query := `
+		INSERT INTO user_prompts (session_id, prompt_number, prompt_text, created_at, created_at_epoch)
+		VALUES (?, ?, ?, NOW(), ?)
+	`
+	result, err := m.db.ExecContext(ctx, query, prompt.SessionID, prompt.PromptNumber, prompt.PromptText, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err == nil {
+		prompt.ID = id
+	}
+	return nil
+}
+
+// GetUserPrompts retrieves user prompts for a session.
+func (m *MySQL) GetUserPrompts(ctx context.Context, sessionID string, limit int) ([]models.UserPrompt, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+		FROM user_prompts
+		WHERE session_id = ?
+		ORDER BY prompt_number ASC
+		LIMIT ?
+	`
+	rows, err := m.db.QueryContext(ctx, query, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prompts []models.UserPrompt
+	for rows.Next() {
+		var p models.UserPrompt
+		if err := rows.Scan(&p.ID, &p.SessionID, &p.PromptNumber, &p.PromptText, &p.CreatedAt, &p.CreatedAtEpoch); err != nil {
+			return nil, err
+		}
+		prompts = append(prompts, p)
+	}
+	return prompts, rows.Err()
+}
+
+// SearchFTS performs full-text search across observations and user_prompts.
+// Note: MySQL uses FULLTEXT indexes instead of FTS5.
+func (m *MySQL) SearchFTS(ctx context.Context, query string, types []string, limit int) ([]models.SearchResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var results []models.SearchResult
+
+	// Determine which types to search
+	searchObservations := len(types) == 0
+	searchPrompts := len(types) == 0
+	for _, t := range types {
+		if t == "observation" {
+			searchObservations = true
+		}
+		if t == "prompt" {
+			searchPrompts = true
+		}
+	}
+
+	// Search observations using LIKE (MySQL FULLTEXT requires separate setup)
+	if searchObservations {
+		searchPattern := "%" + query + "%"
+		obsQuery := `
+			SELECT id, session_id, content, created_at
+			FROM observations
+			WHERE content LIKE ? OR COALESCE(title, '') LIKE ? OR COALESCE(narrative, '') LIKE ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`
+		rows, err := m.db.QueryContext(ctx, obsQuery, searchPattern, searchPattern, searchPattern, limit)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var r models.SearchResult
+				r.Type = "observation"
+				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt); err != nil {
+					continue
+				}
+				// Create snippet from content
+				if len(r.Content) > 100 {
+					r.Snippet = r.Content[:100] + "..."
+				} else {
+					r.Snippet = r.Content
+				}
+				results = append(results, r)
+			}
+		}
+	}
+
+	// Search user_prompts using LIKE
+	if searchPrompts {
+		searchPattern := "%" + query + "%"
+		promptQuery := `
+			SELECT id, session_id, prompt_text, created_at
+			FROM user_prompts
+			WHERE prompt_text LIKE ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`
+		rows, err := m.db.QueryContext(ctx, promptQuery, searchPattern, limit)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var r models.SearchResult
+				r.Type = "prompt"
+				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt); err != nil {
+					continue
+				}
+				// Create snippet from content
+				if len(r.Content) > 100 {
+					r.Snippet = r.Content[:100] + "..."
+				} else {
+					r.Snippet = r.Content
+				}
+				results = append(results, r)
+			}
+		}
+	}
+
+	return results, nil
 }

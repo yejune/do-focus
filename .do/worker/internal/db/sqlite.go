@@ -155,6 +155,130 @@ func (s *SQLite) runMigrations() error {
 		}
 	}
 
+	// Migration 005: Extend observations table with rich metadata columns
+	observationColumns := []string{
+		`ALTER TABLE observations ADD COLUMN title TEXT`,
+		`ALTER TABLE observations ADD COLUMN subtitle TEXT`,
+		`ALTER TABLE observations ADD COLUMN narrative TEXT`,
+		`ALTER TABLE observations ADD COLUMN facts TEXT`,
+		`ALTER TABLE observations ADD COLUMN concepts TEXT`,
+		`ALTER TABLE observations ADD COLUMN files_read TEXT`,
+		`ALTER TABLE observations ADD COLUMN files_modified TEXT`,
+		`ALTER TABLE observations ADD COLUMN result_preview TEXT`,
+		`ALTER TABLE observations ADD COLUMN prompt_number INTEGER`,
+		`ALTER TABLE observations ADD COLUMN discovery_tokens INTEGER DEFAULT 0`,
+	}
+	for _, col := range observationColumns {
+		_, _ = s.db.Exec(col)
+	}
+
+	// Migration 006: Create user_prompts table
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_prompts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			prompt_number INTEGER NOT NULL,
+			prompt_text TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			created_at_epoch INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create user_prompts table: %w", err)
+	}
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_prompts_session ON user_prompts(session_id)`)
+	_, _ = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_user_prompts_prompt_number ON user_prompts(session_id, prompt_number)`)
+
+	// Migration 007: Extend summaries table with structured fields
+	summaryColumns := []string{
+		`ALTER TABLE summaries ADD COLUMN request TEXT`,
+		`ALTER TABLE summaries ADD COLUMN investigated TEXT`,
+		`ALTER TABLE summaries ADD COLUMN learned TEXT`,
+		`ALTER TABLE summaries ADD COLUMN completed TEXT`,
+		`ALTER TABLE summaries ADD COLUMN next_steps TEXT`,
+		`ALTER TABLE summaries ADD COLUMN files_read TEXT`,
+		`ALTER TABLE summaries ADD COLUMN files_edited TEXT`,
+		`ALTER TABLE summaries ADD COLUMN discovery_tokens INTEGER DEFAULT 0`,
+	}
+	for _, col := range summaryColumns {
+		_, _ = s.db.Exec(col)
+	}
+
+	// Migration 008: Create FTS5 virtual tables for full-text search
+	// Note: FTS5 content tables use content sync - manual sync via triggers
+	_, _ = s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
+			title, subtitle, narrative, content, facts, concepts,
+			content='observations', content_rowid='id'
+		)
+	`)
+
+	_, _ = s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS user_prompts_fts USING fts5(
+			prompt_text,
+			content='user_prompts', content_rowid='id'
+		)
+	`)
+
+	// Migration 009: Create FTS5 sync triggers for observations
+	// After INSERT trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS observations_ai AFTER INSERT ON observations BEGIN
+			INSERT INTO observations_fts(rowid, title, subtitle, narrative, content, facts, concepts)
+			VALUES (NEW.id, NEW.title, NEW.subtitle, NEW.narrative, NEW.content, NEW.facts, NEW.concepts);
+		END
+	`)
+
+	// After DELETE trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
+			INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, content, facts, concepts)
+			VALUES ('delete', OLD.id, OLD.title, OLD.subtitle, OLD.narrative, OLD.content, OLD.facts, OLD.concepts);
+		END
+	`)
+
+	// After UPDATE trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
+			INSERT INTO observations_fts(observations_fts, rowid, title, subtitle, narrative, content, facts, concepts)
+			VALUES ('delete', OLD.id, OLD.title, OLD.subtitle, OLD.narrative, OLD.content, OLD.facts, OLD.concepts);
+			INSERT INTO observations_fts(rowid, title, subtitle, narrative, content, facts, concepts)
+			VALUES (NEW.id, NEW.title, NEW.subtitle, NEW.narrative, NEW.content, NEW.facts, NEW.concepts);
+		END
+	`)
+
+	// Migration 010: Create FTS5 sync triggers for user_prompts
+	// After INSERT trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS user_prompts_ai AFTER INSERT ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(rowid, prompt_text)
+			VALUES (NEW.id, NEW.prompt_text);
+		END
+	`)
+
+	// After DELETE trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS user_prompts_ad AFTER DELETE ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, prompt_text)
+			VALUES ('delete', OLD.id, OLD.prompt_text);
+		END
+	`)
+
+	// After UPDATE trigger
+	_, _ = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS user_prompts_au AFTER UPDATE ON user_prompts BEGIN
+			INSERT INTO user_prompts_fts(user_prompts_fts, rowid, prompt_text)
+			VALUES ('delete', OLD.id, OLD.prompt_text);
+			INSERT INTO user_prompts_fts(rowid, prompt_text)
+			VALUES (NEW.id, NEW.prompt_text);
+		END
+	`)
+
+	// Rebuild FTS indexes for existing data (idempotent)
+	_, _ = s.db.Exec(`INSERT INTO observations_fts(observations_fts) VALUES ('rebuild')`)
+	_, _ = s.db.Exec(`INSERT INTO user_prompts_fts(user_prompts_fts) VALUES ('rebuild')`)
+
 	return nil
 }
 
@@ -422,6 +546,29 @@ func (s *SQLite) GetAllSummaries(ctx context.Context, days int, limit int) ([]mo
 	return summaries, rows.Err()
 }
 
+// GetLatestSummary retrieves the latest session summary for a user.
+func (s *SQLite) GetLatestSummary(ctx context.Context, userName string) (*models.Summary, error) {
+	query := `
+		SELECT su.id, COALESCE(su.session_id, ''), su.type, su.content, su.created_at
+		FROM summaries su
+		JOIN sessions s ON su.session_id = s.id
+		WHERE s.user_name = ? AND su.type = 'session'
+		ORDER BY su.created_at DESC
+		LIMIT 1
+	`
+	summary := &models.Summary{}
+	err := s.db.QueryRowContext(ctx, query, userName).Scan(
+		&summary.ID, &summary.SessionID, &summary.Type, &summary.Content, &summary.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return summary, nil
+}
+
 // CreatePlan creates a new plan.
 func (s *SQLite) CreatePlan(ctx context.Context, plan *models.Plan) error {
 	query := `
@@ -603,4 +750,128 @@ func tagsToJSON(tags []string) string {
 	}
 	data, _ := json.Marshal(tags)
 	return string(data)
+}
+
+// CreateUserPrompt creates a new user prompt record.
+func (s *SQLite) CreateUserPrompt(ctx context.Context, prompt *models.UserPrompt) error {
+	query := `
+		INSERT INTO user_prompts (session_id, prompt_number, prompt_text, created_at, created_at_epoch)
+		VALUES (?, ?, ?, ?, ?)
+	`
+	now := time.Now()
+	result, err := s.db.ExecContext(ctx, query, prompt.SessionID, prompt.PromptNumber, prompt.PromptText, now, now.Unix())
+	if err != nil {
+		return err
+	}
+	id, err := result.LastInsertId()
+	if err == nil {
+		prompt.ID = id
+		prompt.CreatedAt = now
+		prompt.CreatedAtEpoch = now.Unix()
+	}
+	return nil
+}
+
+// GetUserPrompts retrieves user prompts for a session.
+func (s *SQLite) GetUserPrompts(ctx context.Context, sessionID string, limit int) ([]models.UserPrompt, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := `
+		SELECT id, session_id, prompt_number, prompt_text, created_at, created_at_epoch
+		FROM user_prompts
+		WHERE session_id = ?
+		ORDER BY prompt_number ASC
+		LIMIT ?
+	`
+	rows, err := s.db.QueryContext(ctx, query, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prompts []models.UserPrompt
+	for rows.Next() {
+		var p models.UserPrompt
+		if err := rows.Scan(&p.ID, &p.SessionID, &p.PromptNumber, &p.PromptText, &p.CreatedAt, &p.CreatedAtEpoch); err != nil {
+			return nil, err
+		}
+		prompts = append(prompts, p)
+	}
+	return prompts, rows.Err()
+}
+
+// SearchFTS performs full-text search across observations and user_prompts using FTS5.
+func (s *SQLite) SearchFTS(ctx context.Context, query string, types []string, limit int) ([]models.SearchResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var results []models.SearchResult
+
+	// Determine which types to search
+	searchObservations := len(types) == 0
+	searchPrompts := len(types) == 0
+	for _, t := range types {
+		if t == "observation" {
+			searchObservations = true
+		}
+		if t == "prompt" {
+			searchPrompts = true
+		}
+	}
+
+	// Search observations using FTS5
+	if searchObservations {
+		obsQuery := `
+			SELECT o.id, o.session_id, o.content, o.created_at,
+			       snippet(observations_fts, 3, '<mark>', '</mark>', '...', 32) as snippet,
+			       bm25(observations_fts) as rank
+			FROM observations_fts
+			JOIN observations o ON observations_fts.rowid = o.id
+			WHERE observations_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		rows, err := s.db.QueryContext(ctx, obsQuery, query, limit)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var r models.SearchResult
+				r.Type = "observation"
+				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt, &r.Snippet, &r.Rank); err != nil {
+					continue
+				}
+				results = append(results, r)
+			}
+		}
+	}
+
+	// Search user_prompts using FTS5
+	if searchPrompts {
+		promptQuery := `
+			SELECT p.id, p.session_id, p.prompt_text, p.created_at,
+			       snippet(user_prompts_fts, 0, '<mark>', '</mark>', '...', 32) as snippet,
+			       bm25(user_prompts_fts) as rank
+			FROM user_prompts_fts
+			JOIN user_prompts p ON user_prompts_fts.rowid = p.id
+			WHERE user_prompts_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`
+		rows, err := s.db.QueryContext(ctx, promptQuery, query, limit)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var r models.SearchResult
+				r.Type = "prompt"
+				if err := rows.Scan(&r.ID, &r.SessionID, &r.Content, &r.CreatedAt, &r.Snippet, &r.Rank); err != nil {
+					continue
+				}
+				results = append(results, r)
+			}
+		}
+	}
+
+	return results, nil
 }

@@ -3,6 +3,29 @@ package models
 
 import "time"
 
+// =============================================================================
+// Token Economics Constants
+// =============================================================================
+
+const (
+	TokenBudgetMinimal  = 500
+	TokenBudgetStandard = 2000
+	TokenBudgetFull     = 5000
+)
+
+// ContextLevel defines the level of context to inject.
+type ContextLevel int
+
+const (
+	LevelMinimal  ContextLevel = 1
+	LevelStandard ContextLevel = 2
+	LevelFull     ContextLevel = 3
+)
+
+// =============================================================================
+// Core Entity Types
+// =============================================================================
+
 // Session represents a Claude session.
 type Session struct {
 	ID        string     `json:"id" db:"id"`
@@ -25,6 +48,28 @@ type Observation struct {
 	Importance int       `json:"importance" db:"importance"` // 1-5
 	Tags       string    `json:"tags,omitempty" db:"tags"`   // JSON array
 	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+
+	// Extended fields for structured observations
+	Title           *string `json:"title,omitempty" db:"title"`
+	Subtitle        *string `json:"subtitle,omitempty" db:"subtitle"`
+	Narrative       *string `json:"narrative,omitempty" db:"narrative"`
+	Facts           string  `json:"facts,omitempty" db:"facts"`                   // JSON array
+	Concepts        string  `json:"concepts,omitempty" db:"concepts"`             // JSON array
+	FilesRead       string  `json:"files_read,omitempty" db:"files_read"`         // JSON array
+	FilesModified   string  `json:"files_modified,omitempty" db:"files_modified"` // JSON array
+	ResultPreview   *string `json:"result_preview,omitempty" db:"result_preview"`
+	PromptNumber    *int    `json:"prompt_number,omitempty" db:"prompt_number"`
+	DiscoveryTokens int     `json:"discovery_tokens" db:"discovery_tokens"`
+}
+
+// UserPrompt represents a user prompt within a session.
+type UserPrompt struct {
+	ID             int64     `json:"id" db:"id"`
+	SessionID      string    `json:"session_id" db:"session_id"`
+	PromptNumber   int       `json:"prompt_number" db:"prompt_number"`
+	PromptText     string    `json:"prompt_text" db:"prompt_text"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	CreatedAtEpoch int64     `json:"created_at_epoch" db:"created_at_epoch"`
 }
 
 // Summary represents a session or period summary.
@@ -34,6 +79,16 @@ type Summary struct {
 	Type      string    `json:"type" db:"type"` // session, daily, weekly
 	Content   string    `json:"content" db:"content"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
+
+	// Extended fields for structured summaries
+	Request         *string `json:"request,omitempty" db:"request"`
+	Investigated    *string `json:"investigated,omitempty" db:"investigated"`
+	Learned         *string `json:"learned,omitempty" db:"learned"`
+	Completed       *string `json:"completed,omitempty" db:"completed"`
+	NextSteps       *string `json:"next_steps,omitempty" db:"next_steps"`
+	FilesRead       string  `json:"files_read,omitempty" db:"files_read"`     // JSON array
+	FilesEdited     string  `json:"files_edited,omitempty" db:"files_edited"` // JSON array
+	DiscoveryTokens int     `json:"discovery_tokens" db:"discovery_tokens"`
 }
 
 // Plan represents a development plan.
@@ -64,14 +119,82 @@ type Project struct {
 	LastActivity time.Time `json:"last_activity"`
 }
 
+// =============================================================================
+// Token Economics & Level Configuration
+// =============================================================================
+
+// LevelConfig defines configuration for a context level.
+type LevelConfig struct {
+	Level             ContextLevel
+	MaxTokens         int
+	ObservationLimit  int
+	IncludePlan       bool
+	IncludeTeam       bool
+	IncludeTimeline   bool
+	IncludePreviously bool
+}
+
+// TokenEconomics tracks token usage and efficiency.
+type TokenEconomics struct {
+	ReadTokens  int     `json:"read_tokens"`
+	WorkTokens  int     `json:"work_tokens"`
+	TotalBudget int     `json:"total_budget"`
+	UsedTokens  int     `json:"used_tokens"`
+	Savings     int     `json:"savings"`
+	Efficiency  float64 `json:"efficiency"`
+}
+
+// =============================================================================
+// API Response Types
+// =============================================================================
+
 // ContextInjectResponse is the response for context injection.
 type ContextInjectResponse struct {
 	Session      *Session       `json:"session,omitempty"`
 	Observations []Observation  `json:"observations,omitempty"`
 	ActivePlan   *Plan          `json:"active_plan,omitempty"`
 	TeamContext  []TeamContext  `json:"team_context,omitempty"`
+	Previously   string         `json:"previously,omitempty"`
+	Economics    *TokenEconomics `json:"economics,omitempty"`
+	Level        ContextLevel   `json:"level"`
 	Markdown     string         `json:"markdown"`
 }
+
+// HealthResponse is the health check response.
+type HealthResponse struct {
+	Status   string `json:"status"`
+	DBType   string `json:"db_type"`
+	DBStatus string `json:"db_status"`
+	Version  string `json:"version"`
+}
+
+// ErrorResponse is a standard error response.
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message,omitempty"`
+}
+
+// SearchResult represents a single search result.
+type SearchResult struct {
+	Type      string    `json:"type"` // observation, summary, prompt
+	ID        int64     `json:"id"`
+	SessionID string    `json:"session_id,omitempty"`
+	Content   string    `json:"content,omitempty"`
+	Snippet   string    `json:"snippet"`
+	Rank      float64   `json:"rank"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SearchResponse is the response for FTS5 search.
+type SearchResponse struct {
+	Results []SearchResult `json:"results"`
+	Query   string         `json:"query"`
+	Total   int            `json:"total"`
+}
+
+// =============================================================================
+// API Request Types
+// =============================================================================
 
 // CreateSessionRequest is the request to create a new session.
 type CreateSessionRequest struct {
@@ -110,16 +233,23 @@ type CreatePlanRequest struct {
 	FilePath  string `json:"file_path,omitempty"`
 }
 
-// HealthResponse is the health check response.
-type HealthResponse struct {
-	Status   string `json:"status"`
-	DBType   string `json:"db_type"`
-	DBStatus string `json:"db_status"`
-	Version  string `json:"version"`
+// GenerateSummaryRequest is the request to generate a session summary.
+type GenerateSummaryRequest struct {
+	SessionID            string                 `json:"session_id" binding:"required"`
+	LastAssistantMessage string                 `json:"last_assistant_message"`
+	TranscriptStats      map[string]interface{} `json:"transcript_stats,omitempty"`
 }
 
-// ErrorResponse is a standard error response.
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message,omitempty"`
+// CreateUserPromptRequest is the request to create a user prompt record.
+type CreateUserPromptRequest struct {
+	SessionID    string `json:"session_id" binding:"required"`
+	PromptNumber int    `json:"prompt_number" binding:"required"`
+	PromptText   string `json:"prompt_text" binding:"required"`
+}
+
+// SearchRequest is the request for searching observations and summaries.
+type SearchRequest struct {
+	Query string   `json:"query" form:"q" binding:"required"`
+	Types []string `json:"types" form:"types"`
+	Limit int      `json:"limit" form:"limit"`
 }

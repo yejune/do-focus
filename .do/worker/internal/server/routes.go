@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/do-focus/worker/pkg/models"
@@ -40,6 +41,13 @@ func (s *Server) setupRoutes() {
 		// Summaries
 		api.GET("/summaries", s.handleGetSummaries)
 		api.POST("/summaries", s.handleCreateSummary)
+		api.POST("/summaries/generate", s.handleGenerateSummary)
+
+		// User Prompts
+		api.POST("/prompts", s.handleCreateUserPrompt)
+
+		// FTS5 Search
+		api.GET("/search", s.handleSearch)
 
 		// Plans
 		api.GET("/plans", s.handleGetPlans)
@@ -77,6 +85,10 @@ func (s *Server) handleHealth(c *gin.Context) {
 }
 
 // handleContextInject handles context injection for SessionStart hook.
+// level parameter controls the amount of data returned:
+// - level 1: minimal (session only)
+// - level 2: standard (session + observations) [default]
+// - level 3: full (session + observations + plan + team)
 func (s *Server) handleContextInject(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -88,7 +100,17 @@ func (s *Server) handleContextInject(c *gin.Context) {
 		userName = "default"
 	}
 
-	// Get latest session
+	// Parse level parameter (1-3, default 2)
+	levelStr := c.DefaultQuery("level", "2")
+	level, _ := strconv.Atoi(levelStr)
+	if level < 1 {
+		level = 1
+	}
+	if level > 3 {
+		level = 3
+	}
+
+	// Get latest session (always included)
 	session, err := s.db.GetLatestSession(ctx, userName)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -98,40 +120,53 @@ func (s *Server) handleContextInject(c *gin.Context) {
 		return
 	}
 
-	// Get recent observations
-	limitStr := c.DefaultQuery("obs_limit", "20")
-	limit, _ := strconv.Atoi(limitStr)
-	if limit <= 0 {
-		limit = 20
+	var observations []models.Observation
+	var plan *models.Plan
+	var teamContext []models.TeamContext
+
+	// Level 2+: Include observations
+	if level >= 2 {
+		limitStr := c.DefaultQuery("obs_limit", "20")
+		limit, _ := strconv.Atoi(limitStr)
+		if limit <= 0 {
+			limit = 20
+		}
+		// Adjust limit based on level
+		if level == 2 {
+			if limit > 20 {
+				limit = 20
+			}
+		}
+
+		observations, err = s.db.GetRecentObservations(ctx, userName, limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "database_error",
+				Message: err.Error(),
+			})
+			return
+		}
 	}
 
-	observations, err := s.db.GetRecentObservations(ctx, userName, limit)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error:   "database_error",
-			Message: err.Error(),
-		})
-		return
-	}
+	// Level 3: Include plan and team context
+	if level >= 3 {
+		plan, err = s.db.GetActivePlan(ctx, userName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "database_error",
+				Message: err.Error(),
+			})
+			return
+		}
 
-	// Get active plan
-	plan, err := s.db.GetActivePlan(ctx, userName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error:   "database_error",
-			Message: err.Error(),
-		})
-		return
-	}
-
-	// Get team context
-	teamContext, err := s.db.GetTeamContext(ctx, userName)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
-			Error:   "database_error",
-			Message: err.Error(),
-		})
-		return
+		teamContext, err = s.db.GetTeamContext(ctx, userName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+				Error:   "database_error",
+				Message: err.Error(),
+			})
+			return
+		}
 	}
 
 	// Build markdown response
@@ -461,6 +496,214 @@ func (s *Server) getProjects(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, projects)
+}
+
+// handleGenerateSummary generates a rule-based summary from session observations.
+func (s *Server) handleGenerateSummary(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req models.GenerateSummaryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// 1. Verify session exists
+	session, err := s.db.GetSession(ctx, req.SessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+	if session == nil {
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error:   "session_not_found",
+			Message: "Session not found: " + req.SessionID,
+		})
+		return
+	}
+
+	// 2. Get observations for the session
+	observations, err := s.db.GetObservationsFiltered(ctx, req.SessionID, "", 100)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// 3. Generate rule-based summary
+	summaryContent := generateRuleBasedSummary(observations, req.LastAssistantMessage)
+
+	// 4. Save summary to DB
+	summary := &models.Summary{
+		SessionID: req.SessionID,
+		Type:      "session",
+		Content:   summaryContent,
+	}
+
+	if err := s.db.CreateSummary(ctx, summary); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, summary)
+}
+
+// generateRuleBasedSummary extracts key information from observations using rules.
+func generateRuleBasedSummary(observations []models.Observation, lastMessage string) string {
+	var completed []string
+	var decisions []string
+	var learnings []string
+	var request string
+
+	// Extract request from last message (first sentence)
+	if lastMessage != "" {
+		sentences := strings.SplitN(lastMessage, ".", 2)
+		if len(sentences) > 0 {
+			request = strings.TrimSpace(sentences[0])
+		}
+	}
+
+	// Categorize observations by type
+	for _, obs := range observations {
+		switch obs.Type {
+		case "decision":
+			decisions = append(decisions, obs.Content)
+			completed = append(completed, obs.Content)
+		case "bugfix":
+			completed = append(completed, "Fixed: "+obs.Content)
+		case "feature":
+			completed = append(completed, "Implemented: "+obs.Content)
+		case "learning", "insight":
+			learnings = append(learnings, obs.Content)
+		case "pattern":
+			learnings = append(learnings, "Pattern: "+obs.Content)
+		}
+	}
+
+	// Build summary content
+	var parts []string
+
+	if request != "" {
+		parts = append(parts, "## Request\n"+request)
+	}
+
+	if len(completed) > 0 {
+		completedStr := "## Completed\n"
+		for _, c := range completed {
+			completedStr += "- " + c + "\n"
+		}
+		parts = append(parts, completedStr)
+	}
+
+	if len(decisions) > 0 {
+		decisionsStr := "## Decisions\n"
+		for _, d := range decisions {
+			decisionsStr += "- " + d + "\n"
+		}
+		parts = append(parts, decisionsStr)
+	}
+
+	if len(learnings) > 0 {
+		learningsStr := "## Learnings\n"
+		for _, l := range learnings {
+			learningsStr += "- " + l + "\n"
+		}
+		parts = append(parts, learningsStr)
+	}
+
+	if len(parts) == 0 {
+		return "No significant observations recorded in this session."
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// handleCreateUserPrompt handles user prompt creation.
+func (s *Server) handleCreateUserPrompt(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req models.CreateUserPromptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	prompt := &models.UserPrompt{
+		SessionID:      req.SessionID,
+		PromptNumber:   req.PromptNumber,
+		PromptText:     req.PromptText,
+		CreatedAtEpoch: time.Now().Unix(),
+	}
+
+	if err := s.db.CreateUserPrompt(ctx, prompt); err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, prompt)
+}
+
+// handleSearch handles FTS5 full-text search across multiple types.
+func (s *Server) handleSearch(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, models.ErrorResponse{
+			Error:   "invalid_request",
+			Message: "Query parameter 'q' is required",
+		})
+		return
+	}
+
+	// Parse types parameter (comma-separated)
+	typesStr := c.DefaultQuery("types", "observation,prompt")
+	types := strings.Split(typesStr, ",")
+	for i, t := range types {
+		types[i] = strings.TrimSpace(t)
+	}
+
+	// Parse limit
+	limitStr := c.DefaultQuery("limit", "50")
+	limit, _ := strconv.Atoi(limitStr)
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	results, err := s.db.SearchFTS(ctx, query, types, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "database_error",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.SearchResponse{
+		Results: results,
+		Query:   query,
+		Total:   len(results),
+	})
 }
 
 // buildContextMarkdown builds a markdown representation of the context.
